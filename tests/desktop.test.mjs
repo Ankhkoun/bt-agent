@@ -137,6 +137,7 @@ test('BT desktop production API with isolated memory and local model', { timeout
     assert.equal((await fetch(`${origin}/api/bt?memory=../agent/auth`)).status, 400);
     assert.equal((await fetch(`${origin}/api/bt`, { headers: { Origin: 'https://foreign.example' } })).status, 403);
     assert.equal((await fetch(`${origin}/api/bt`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'settings', settings: { ...btSettings, defaultMode: 'invalid' } }) })).status, 400);
+    assert.equal((await fetch(`${origin}/api/bt`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ action: 'settings', settings: { ...btSettings, memoryTotalLimit: 1000 } }) })).status, 400);
     await api('/api/bt', { action: 'settings', settings: { ...btSettings, persona: 'BT_PERSONA_MARKER' } });
     sid = (await api('/api/agent/new', { cwd: fixture, type: 'ensure_session', provider: 'bt-test', modelId: 'fixture' })).sessionId;
   });

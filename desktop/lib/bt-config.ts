@@ -11,8 +11,8 @@ export function btRoot(): string {
   if (!root || !existsSync(join(root, ".pi", "SYSTEM.md"))) throw new Error("请通过 BT-Agent 桌面启动器打开应用。");
   return resolve(root);
 }
-export interface BTSettings { defaultMode: BTMode; memoryEnabled: boolean; memoryLimit: number; persona: string }
-export const DEFAULT_BT_SETTINGS: BTSettings = { defaultMode: "general", memoryEnabled: true, memoryLimit: 8000, persona: "" };
+export interface BTSettings { defaultMode: BTMode; memoryEnabled: boolean; memoryLimit: number; memoryTotalLimit: number; persona: string }
+export const DEFAULT_BT_SETTINGS: BTSettings = { defaultMode: "general", memoryEnabled: true, memoryLimit: 8000, memoryTotalLimit: 64000, persona: "" };
 export function readBTSettings(): BTSettings {
   const path = join(btRoot(), ".bt", "preferences.json");
   if (!existsSync(path)) return { ...DEFAULT_BT_SETTINGS };
@@ -21,8 +21,9 @@ export function readBTSettings(): BTSettings {
 export function validateBTSettings(value: unknown): BTSettings {
   if (!value || typeof value !== "object") throw new Error("无效的 BT 设置");
   const data = value as Record<string, unknown>;
-  if (!BT_MODES.includes(data.defaultMode as BTMode) || typeof data.memoryEnabled !== "boolean" || !Number.isInteger(data.memoryLimit) || Number(data.memoryLimit) < 2000 || Number(data.memoryLimit) > 32000 || typeof data.persona !== "string" || data.persona.length > 8000) throw new Error("设置范围无效：记忆长度 2000–32000，个性偏好最多 8000 字符。");
-  return { defaultMode: data.defaultMode as BTMode, memoryEnabled: data.memoryEnabled, memoryLimit: Number(data.memoryLimit), persona: data.persona };
+  const memoryTotalLimit = data.memoryTotalLimit === undefined ? DEFAULT_BT_SETTINGS.memoryTotalLimit : Number(data.memoryTotalLimit);
+  if (!BT_MODES.includes(data.defaultMode as BTMode) || typeof data.memoryEnabled !== "boolean" || !Number.isInteger(data.memoryLimit) || Number(data.memoryLimit) < 2000 || Number(data.memoryLimit) > 32000 || !Number.isInteger(memoryTotalLimit) || memoryTotalLimit < 16000 || memoryTotalLimit > 128000 || typeof data.persona !== "string" || data.persona.length > 8000) throw new Error("设置范围无效：每份记忆 2000–32000 字符，总记忆 16000–128000 字符，个性偏好最多 8000 字符。");
+  return { defaultMode: data.defaultMode as BTMode, memoryEnabled: data.memoryEnabled, memoryLimit: Number(data.memoryLimit), memoryTotalLimit, persona: data.persona };
 }
 export function saveBTSettings(value: unknown): BTSettings {
   const data = validateBTSettings(value);

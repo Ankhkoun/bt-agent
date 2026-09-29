@@ -3,7 +3,7 @@ import typescript from "eslint-config-next/typescript";
 
 const eslintConfig = [
   // Reference trees and packaged/generated output are not source to lint.
-  { ignores: ["ref-repos/**", "release/**", ".next/**"] },
+  { ignores: ["ref-repos/**", "release/**", ".next/**", "scripts/electron-diag.js", "scripts/pill-test-main.js", "scripts/tmp-md-test.mjs"] },
   ...coreWebVitals,
   ...typescript,
   {

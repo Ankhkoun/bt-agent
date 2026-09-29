@@ -18,6 +18,7 @@ V0.1 包含 General、Tutor、Interviewer、Planner、BT 五种模式、Markdown
 5. 会话栏加号新建；右键会话可重命名、删除等；放大镜搜索历史内容。已有会话保留自己的模式。
 
 BT 设置还包含新对话默认模式、每轮载入 Memory 的开关和长度、交流偏好。没有模型凭据时可以浏览 Memory、切换模式和管理项目，无法得到真实模型回复。
+每份 Memory 默认最多载入 8000 字符，每轮合计最多载入 64000 字符；两项上限都可在设置中调整。超出上限的内容会被截断并标记，避免长期记录无限扩大模型上下文。
 
 桌面版和命令行版默认共享 `.bt/agent/` 中的模型配置、认证和原生 Session，以及根目录 `memory/`。不要同时让两个入口修改同一会话或同一份 Memory。
 
@@ -249,6 +250,7 @@ Pi 在正常联网启动时可能下载缺失的 `fd`/`rg` 工具；`--offline` 
 npm run check
 npm test
 npm run doctor
+npm run verify
 ```
 
 本机 npm 不在 PATH 中也可运行：
@@ -257,10 +259,13 @@ npm run doctor
 .\scripts\npm.ps1 run check
 .\scripts\npm.ps1 test
 .\scripts\npm.ps1 run doctor
+.\scripts\npm.ps1 run verify
 ```
 
 测试只用临时模板、测试会话和 `127.0.0.1` 模拟模型接口，不调用付费服务，不读取真实个人 Memory 或密钥。
 测试范围及尚未验证项见 [TESTING.md](docs/TESTING.md)。Pi 升级应修改锁定版本、重新阅读官方文档并重跑测试，不直接浮动到 latest。
+
+桌面运行中时可执行 `npm run acceptance` 做只读健康验收，检查项目、Memory、Session、运行状态和模型列表。`npm run acceptance -- --live` 才会发送一次真实模型请求，并且必须先设置 `$env:BT_ACCEPTANCE_CONFIRM = "1"`；默认使用当前默认模型，也可先设置 `$env:BT_ACCEPTANCE_PROVIDER` 和 `$env:BT_ACCEPTANCE_MODEL` 指定日常实际使用的模型。结果只代表当前服务商和模型链路，不代表模型质量或长期稳定性。
 
 桌面回归测试需先构建 `desktop/`，然后执行 `.\scripts\npm.ps1 run test:desktop`。界面内部使用本机 Web 技术，由 Electron 自动管理。
 

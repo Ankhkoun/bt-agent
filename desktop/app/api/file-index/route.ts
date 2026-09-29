@@ -155,7 +155,10 @@ export async function GET(req: NextRequest) {
       const inflight = globalThis.__piFileIndexInflight ??= new Map<string, Promise<CacheEntry>>();
       let pending = inflight.get(cwd);
       if (!pending) {
+        // The promise closes over itself to prevent an older request from
+        // replacing a newer cache entry when the in-flight map is invalidated.
         let request!: Promise<CacheEntry>;
+        // eslint-disable-next-line prefer-const
         request = (async (): Promise<CacheEntry> => {
           const listing = (await listWithGit(cwd)) ?? await listWithWalk(cwd);
           const completed = Date.now();

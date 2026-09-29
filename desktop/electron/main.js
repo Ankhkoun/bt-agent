@@ -17,10 +17,8 @@ app.setName("BT-Agent");
 app.setPath("userData", path.join(BT_ROOT, ".bt", "desktop"));
 let PORT = 30142;
 
-// With asar:false, app.isPackaged returns false even in production.
-// Detect dev vs production by checking if resources/ has app/ or app.asar.
-const pkgRoot = path.join(process.resourcesPath, "app");
-const asarRoot = path.join(process.resourcesPath, "app.asar");
+// With asar:false, app.isPackaged returns false even in production. The
+// explicit launcher flag is the source of truth for this project.
 const IS_DEV = process.env.BT_DESKTOP_DEV === "1";
 
 const HOSTNAME = "127.0.0.1";
