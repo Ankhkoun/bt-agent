@@ -7,7 +7,7 @@ import { BTPlanner } from "./BTPlanner";
 import { MarkdownBody } from "./MarkdownBody";
 
 const labels: Record<string, string> = { profile: "关于我", goals: "目标", tasks: "当前任务", projects: "项目记录", knowledge_map: "知识地图", learning_log: "学习日志", bt_memory: "共同记忆" };
-type Settings = { defaultMode: string; memoryEnabled: boolean; memoryLimit: number; persona: string };
+type Settings = { defaultMode: string; memoryEnabled: boolean; memoryLimit: number; memoryTotalLimit: number; persona: string };
 type Project = { id: string; name: string; path: string };
 type Data = { root: string; projects: Project[]; settings: Settings; memory: string[] };
 export function BTLibrary({ onProject, onModels }: { onProject: (path: string) => void; onModels: () => void }) {
@@ -80,6 +80,7 @@ export function BTLibrary({ onProject, onModels }: { onProject: (path: string) =
         <label>新对话默认模式<select value={settings.defaultMode} onChange={e => setSettings({ ...settings, defaultMode: e.target.value })}>{["general", "tutor", "interviewer", "planner", "bt"].map(id => <option key={id} value={id}>{id === "bt" ? "BT" : id[0].toUpperCase() + id.slice(1)}</option>)}</select></label>
         <label className="bt-checkbox"><input type="checkbox" checked={settings.memoryEnabled} onChange={e => setSettings({ ...settings, memoryEnabled: e.target.checked })}/> 每轮参考共享 Memory</label>
         <label>每份 Memory 自动载入的字符上限<input type="number" min={2000} max={32000} step={1000} value={settings.memoryLimit} onChange={e => setSettings({ ...settings, memoryLimit: Number(e.target.value) })}/></label>
+        <label>每轮 Memory 总字符上限<input type="number" min={16000} max={128000} step={4000} value={settings.memoryTotalLimit} onChange={e => setSettings({ ...settings, memoryTotalLimit: Number(e.target.value) })}/></label>
         <label>你希望 BT 记住的交流偏好<textarea rows={5} maxLength={8000} placeholder="例如：称呼、回答长度、喜欢的交流风格。五种模式仍遵循各自边界。" value={settings.persona} onChange={e => setSettings({ ...settings, persona: e.target.value })}/></label>
         <p>默认模式用于新对话；已有对话保留自己的模式。记忆与交流偏好在下一轮生效。这里不会自动提炼或改写记忆。</p>
         <button className="bt-primary" disabled={busy} onClick={() => void save({ action: "settings", settings })}>{busy ? "保存中…" : "保存 BT 偏好"}</button><output>{message}</output>

@@ -1,5 +1,13 @@
 # V0.1 验证记录
 
+## 工程化回归与桌面健康验收（2026-09-29）
+
+- `npm run verify` 通过：根 TypeScript 检查、集成测试 9 项、桌面 TypeScript 检查、桌面 lint、桌面生产构建、桌面测试 8 项和浏览器测试 2 项全部通过。
+- 生产构建仍报告 17 条 Next/Turbopack 动态文件 tracing 警告，退出码为 0；这些路径是运行时按用户项目目录工作的既有设计，尚未改成静态路径。
+- `npm run acceptance` 对正在运行的桌面实例通过只读健康验收：BT 根目录、4 个项目、7 个会话、运行状态接口和 8 个模型条目均返回有效结构。
+- `npm run acceptance -- --live` 需要显式设置 `BT_ACCEPTANCE_CONFIRM=1`，只发送一次真实请求。2026-09-29 使用默认 `new-provider/gpt-6-astra` 实测请求到达服务端但返回 HTTP 403、无响应正文，因此不能记录为真实模型成功；用户日常使用成功仍需按实际服务商、模型和时间单独确认。
+- 新增 `scripts/run-npm.mjs` 和统一 `verify` 入口，项目内 npm 缺失时可回退到系统 npm；个人 `memory/`、`.bt/`、`.tools/` 和凭据不进入提交。
+
 ## 手动代理与 PAC 共存修复（2026-09-21）
 
 - 回归用例先在旧解析器上失败：Windows 同时保存 `ProxyEnable=1`、手动代理地址和 PAC URL 时返回 undefined。修复后代理/HTTP 单元测试 7 项通过，保留 PAC-only 排除、显式环境优先和回环直连。
