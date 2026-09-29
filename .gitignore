@@ -1,0 +1,18 @@
+node_modules/
+.tools/
+.bt/
+.env
+.env.*
+!.env.example
+**/auth.json
+**/models.json
+*.log
+coverage/
+desktop/.next/
+desktop/out/
+desktop/release/
+desktop/tsconfig.tsbuildinfo
+desktop/node_modules/
+# Personal memory is local by default. Version the empty templates instead.
+memory/*.md
+!memory/README.md

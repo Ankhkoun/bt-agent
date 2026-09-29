@@ -1,0 +1,143 @@
+{
+  "name": "bt-agent-desktop",
+  "version": "0.1.0-gui.1",
+  "description": "BT Personal AI Desktop — based on Pi Web Desktop",
+  "homepage": "https://github.com/isWittHere/pi-web-desktop#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/isWittHere/pi-web-desktop.git"
+  },
+  "bugs": {
+    "url": "https://github.com/isWittHere/pi-web-desktop/issues"
+  },
+  "license": "MIT",
+  "main": "electron/main.js",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "bin": {
+    "pi-web": "bin/pi-web.js"
+  },
+  "files": [
+    "bin",
+    ".next",
+    "!.next/cache",
+    "!.next/dev",
+    "!.next/**/*.js.map",
+    "public",
+    "next.config.ts",
+    "package.json"
+  ],
+  "scripts": {
+    "dev": "next dev -H 127.0.0.1 -p 30141",
+    "dev:turbo": "next dev -H 127.0.0.1 -p 30141 --turbopack",
+    "dev:lan": "next dev -H 0.0.0.0 -p 30141",
+    "build": "next build",
+    "build:webpack": "node --max-old-space-size=12288 node_modules/next/dist/bin/next build --webpack",
+    "start": "next start -H 127.0.0.1 -p 30141",
+    "start:lan": "next start -H 0.0.0.0 -p 30141",
+    "lint": "eslint .",
+    "icons": "node scripts/generate-icons.mjs",
+    "electron:dev": "electron .",
+    "electron:build": "npm run icons && npm run build && electron-builder",
+    "electron:dir": "npm run icons && npm run build && electron-builder --win dir",
+    "electron:portable": "npm run icons && npm run build && electron-builder --win portable",
+    "release:green": "node scripts/build-release.mjs",
+    "release": "npm version patch --no-git-tag-version && npm run build && npm publish --access public",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "0.85.1",
+    "@earendil-works/pi-ai": "0.85.1",
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@earendil-works/pi-tui": "0.85.1",
+    "@fontsource/ia-writer-quattro": "5.3.0",
+    "@fontsource/lilex": "5.3.0",
+    "@lobehub/icons": "5.6.0",
+    "@phosphor-icons/react": "2.1.10",
+    "@types/react-syntax-highlighter": "15.5.13",
+    "js-yaml": "5.4.1",
+    "katex": "0.16.47",
+    "mammoth": "1.12.0",
+    "mermaid": "11.16.1",
+    "next": "16.3.1",
+    "proper-lockfile": "4.1.2",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "react-markdown": "10.1.0",
+    "react-syntax-highlighter": "16.1.1",
+    "rehype-katex": "7.0.1",
+    "rehype-raw": "7.0.0",
+    "rehype-sanitize": "6.0.0",
+    "remark-frontmatter": "5.0.0",
+    "remark-gfm": "4.0.1",
+    "remark-math": "6.0.0",
+    "semver": "7.8.0",
+    "undici": "8.10.0",
+    "unist-util-visit": "5.1.0"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "2.6.2",
+    "@tailwindcss/postcss": "4.2.2",
+    "@types/js-yaml": "4.0.9",
+    "@types/node": "25.9.5",
+    "@types/proper-lockfile": "4.1.4",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@types/semver": "7.8.0",
+    "electron": "43.2.0",
+    "electron-builder": "26.15.3",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.3.1",
+    "jiti": "2.7.0",
+    "postcss": "8.5.26",
+    "tailwindcss": "4.2.2",
+    "to-ico": "1.1.5",
+    "typescript": "5.9.3"
+  },
+  "build": {
+    "appId": "local.bt.agent",
+    "productName": "BT-Agent",
+    "directories": {
+      "output": "release"
+    },
+    "asar": false,
+    "files": [
+      "electron/**/*",
+      "public/**/*",
+      ".next/**/*",
+      "node_modules/**/*",
+      "!.next/cache",
+      "!.next/dev",
+      "!.next/**/*.js.map",
+      "!electron/node_modules",
+      "!node_modules/.cache",
+      "!node_modules/**/node_modules/.cache",
+      "!node_modules/electron/**",
+      "!node_modules/electron-builder/**",
+      "!node_modules/@electron/**",
+      "!node_modules/**/*.js.map",
+      "!node_modules/**/*.mjs.map",
+      "!node_modules/**/*.css.map",
+      "!node_modules/@earendil-works/pi-coding-agent/docs/**",
+      "!node_modules/@earendil-works/pi-coding-agent/examples/**",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "public/icon.ico"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.exe"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "public/icon-mac.png"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "public/icon.png"
+    }
+  },
+  "private": true
+}

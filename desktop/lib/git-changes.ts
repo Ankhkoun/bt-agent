@@ -1,0 +1,297 @@
+import { execFile, spawn } from "child_process";
+import { lstatSync, readFileSync } from "fs";
+import path from "path";
+import { promisify } from "util";
+import { TEXT_PREVIEW_MAX_BYTES } from "./file-types";
+import type { GitFileDiffResponse, GitFileStatus, GitStatusResponse } from "./git-types";
+import { classifyGitStatus, parseGitPorcelainV1, type GitPorcelainEntry } from "./git-status";
+
+const execFileAsync = promisify(execFile);
+const GIT_TIMEOUT_MS = 10_000;
+const GIT_STATUS_MAX_BUFFER = 8 * 1024 * 1024;
+
+
+export async function git(cwd: string, args: string[], maxBuffer = GIT_STATUS_MAX_BUFFER): Promise<string> {
+  const { stdout } = await execFileAsync("git", ["-C", cwd, ...args], {
+    timeout: GIT_TIMEOUT_MS,
+    maxBuffer,
+    env: { ...process.env, LC_ALL: "C" },
+  });
+  return stdout;
+}
+
+export async function findRepositoryRoot(cwd: string): Promise<string | null> {
+  try {
+    return (await git(cwd, ["rev-parse", "--show-toplevel"])).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function isWithinPath(parent: string, target: string): boolean {
+  const relative = path.relative(path.resolve(parent), path.resolve(target));
+  return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative));
+}
+
+function toGitPath(filePath: string): string {
+  return filePath.split(path.sep).join("/");
+}
+
+async function readStatusEntries(repositoryRoot: string): Promise<GitPorcelainEntry[]> {
+  const output = await git(repositoryRoot, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
+  return parseGitPorcelainV1(output);
+}
+
+interface NumstatRecord {
+  additions: number | null;
+  deletions: number | null;
+  path: string;
+}
+
+/**
+ * Parse the null-delimited form of `git diff --numstat -z --find-renames HEAD`.
+ * Regular records are "<added>\t<deleted>\t<path>". Renames/copies are emitted
+ * as an empty-path counts record followed by the original and the new path.
+ * Binary files report "-" for the line counts.
+ */
+function parseNumstat(output: string): Map<string, NumstatRecord> {
+  const records = output.split("\0");
+  const entries = new Map<string, NumstatRecord>();
+  const toCount = (value: string) => (/^\d+$/.test(value) ? Number(value) : null);
+
+  for (let index = 0; index < records.length; index += 1) {
+    const record = records[index];
+    if (!record) continue;
+    const parts = record.split("\t");
+    if (parts.length < 3) continue;
+    const path = parts.slice(2).join("\t");
+    if (path === "") {
+      // Rename/copy group: the next two records hold the original and the new
+      // path; the diff is reported under the new (displayed) path.
+      const newPath = records[index + 2];
+      if (records[index + 1] && newPath) {
+        entries.set(newPath, { additions: toCount(parts[0]), deletions: toCount(parts[1]), path: newPath });
+        index += 2;
+      }
+      continue;
+    }
+    entries.set(path, { additions: toCount(parts[0]), deletions: toCount(parts[1]), path });
+  }
+
+  return entries;
+}
+
+async function readNumstatByPath(repositoryRoot: string, cwd: string): Promise<Map<string, NumstatRecord>> {
+  const relativeCwd = toGitPath(path.relative(repositoryRoot, cwd));
+  const pathspec = relativeCwd || ".";
+  try {
+    const output = await git(repositoryRoot, ["diff", "--no-color", "--no-ext-diff", "--numstat", "-z", "--find-renames", "HEAD", "--", pathspec]);
+    return parseNumstat(output);
+  } catch {
+    return new Map();
+  }
+}
+
+function hasNullByte(content: Buffer): boolean {
+  return content.includes(0);
+}
+
+function countUntrackedTextLines(filePath: string): number {
+  try {
+    const stat = lstatSync(filePath);
+    if (!stat.isFile() || stat.size > TEXT_PREVIEW_MAX_BYTES) return 0;
+    const content = readFileSync(filePath);
+    if (hasNullByte(content) || content.length === 0) return 0;
+    const text = content.toString("utf8");
+    return text.endsWith("\n") ? text.split("\n").length - 1 : text.split("\n").length;
+  } catch {
+    return 0;
+  }
+}
+
+function splitNullDelimited(output: string): string[] {
+  return output.split("\0").filter(Boolean);
+}
+
+function trackedDirectoryPaths(filePaths: string[]): string[] {
+  const directories = new Set<string>();
+  for (const filePath of filePaths) {
+    let directory = path.posix.dirname(filePath);
+    while (directory && directory !== ".") {
+      directories.add(directory);
+      directory = path.posix.dirname(directory);
+    }
+  }
+  return [...directories];
+}
+
+/**
+ * Match paths against ignore rules without Git's usual tracked-file exemption.
+ * The Explorer uses this to visually de-emphasize every path covered by a
+ * .gitignore rule, including files and directories that were tracked before
+ * the rule was added.
+ */
+async function checkIgnoredPaths(repositoryRoot: string, paths: string[]): Promise<string[]> {
+  if (paths.length === 0) return [];
+
+  return new Promise((resolve) => {
+    const child = spawn("git", ["-C", repositoryRoot, "check-ignore", "--no-index", "--stdin", "-z"], {
+      env: { ...process.env, LC_ALL: "C" },
+      stdio: ["pipe", "pipe", "ignore"],
+    });
+    let output = "";
+    let settled = false;
+    const finish = (matched: string[]) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      resolve(matched);
+    };
+    const timeout = setTimeout(() => {
+      child.kill();
+      finish([]);
+    }, GIT_TIMEOUT_MS);
+
+    child.stdout.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+    child.once("error", () => finish([]));
+    // Exit code 1 only means none of the submitted paths matched an ignore rule.
+    child.once("close", () => finish(splitNullDelimited(output)));
+    child.stdin.end(`${paths.join("\0")}\0`);
+  });
+}
+
+async function readIgnoredPaths(repositoryRoot: string): Promise<string[]> {
+  try {
+    const [trackedOutput, ignoredOutput] = await Promise.all([
+      git(repositoryRoot, ["ls-files", "--cached", "-z"]),
+      git(repositoryRoot, ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"]),
+    ]);
+    const trackedPaths = splitNullDelimited(trackedOutput);
+    const candidates = new Set([
+      ...trackedPaths,
+      ...trackedDirectoryPaths(trackedPaths),
+      ...splitNullDelimited(ignoredOutput).map((filePath) => filePath.replace(/\/+$/, "")),
+    ]);
+    const ignoredPaths = await checkIgnoredPaths(repositoryRoot, [...candidates]);
+    return ignoredPaths.map((relative) => path.resolve(repositoryRoot, relative));
+  } catch {
+    return [];
+  }
+}
+
+export async function getGitStatus(cwd: string): Promise<GitStatusResponse> {
+  const repositoryRoot = await findRepositoryRoot(cwd);
+  if (!repositoryRoot) {
+    return {
+      isGitRepository: false,
+      repositoryRoot: null,
+      files: [],
+      additions: 0,
+      deletions: 0,
+      ignoredPaths: [],
+    };
+  }
+
+  const [entries, numstatByPath, ignoredPaths] = await Promise.all([
+    readStatusEntries(repositoryRoot),
+    readNumstatByPath(repositoryRoot, cwd),
+    readIgnoredPaths(repositoryRoot),
+  ]);
+  const files = entries.flatMap((entry): GitFileStatus[] => {
+    const filePath = path.resolve(repositoryRoot, entry.path);
+    if (!isWithinPath(cwd, filePath)) return [];
+    const lineStat = numstatByPath.get(entry.path);
+    const classified = classifyGitStatus(entry);
+    return [{
+      filePath,
+      ...classified,
+      indexStatus: entry.indexStatus,
+      worktreeStatus: entry.worktreeStatus,
+      // Untracked files are diffed against nothing; report their full content
+      // as additions once it is counted below. Binary/binary-diff files get
+      // null so the UI can omit the stat.
+      additions: classified.status === "untracked" ? null : (lineStat?.additions ?? null),
+      deletions: lineStat?.deletions ?? null,
+    }];
+  });
+  for (const file of files) {
+    if (file.status === "untracked") file.additions = countUntrackedTextLines(file.filePath);
+  }
+
+  // Sum the per-file stats so the header numbers always match the per-row
+  // values shown in the Quick Changes list.
+  let totalAdditions = 0;
+  let totalDeletions = 0;
+  for (const file of files) {
+    totalAdditions += file.additions ?? 0;
+    totalDeletions += file.deletions ?? 0;
+  }
+
+  return {
+    isGitRepository: true,
+    repositoryRoot,
+    files,
+    additions: totalAdditions,
+    deletions: totalDeletions,
+    ignoredPaths: ignoredPaths.filter((ignoredPath) => isWithinPath(cwd, ignoredPath)),
+  };
+}
+
+function createAddedFilePatch(gitPath: string, content: string): string {
+  const hasTrailingNewline = content.endsWith("\n");
+  const lines = content.split("\n");
+  if (hasTrailingNewline) lines.pop();
+  const body = lines.map((line) => `+${line}`).join("\n");
+  const noNewlineMarker = !hasTrailingNewline && lines.length > 0 ? "\n\\ No newline at end of file" : "";
+  return [
+    `diff --git a/${gitPath} b/${gitPath}`,
+    "new file mode 100644",
+    "--- /dev/null",
+    `+++ b/${gitPath}`,
+    `@@ -0,0 +1,${lines.length} @@`,
+    `${body}${noNewlineMarker}`,
+  ].join("\n");
+}
+
+async function createTrackedFilePatch(repositoryRoot: string, relativePath: string, originalPath?: string): Promise<string | null> {
+  const paths = originalPath && originalPath !== relativePath ? [originalPath, relativePath] : [relativePath];
+  try {
+    return await git(repositoryRoot, ["diff", "--no-color", "--no-ext-diff", "--unified=3", "HEAD", "--", ...paths], TEXT_PREVIEW_MAX_BYTES * 4);
+  } catch {
+    return null;
+  }
+}
+
+export async function getGitFileDiff(cwd: string, filePath: string): Promise<GitFileDiffResponse> {
+  const repositoryRoot = await findRepositoryRoot(cwd);
+  if (!repositoryRoot || !isWithinPath(repositoryRoot, filePath)) return { supported: false };
+
+  const resolvedFilePath = path.resolve(filePath);
+  const relativePath = toGitPath(path.relative(repositoryRoot, resolvedFilePath));
+  const entry = (await readStatusEntries(repositoryRoot)).find((candidate) => candidate.path === relativePath);
+  if (!entry) return { supported: false };
+
+  const { status } = classifyGitStatus(entry);
+  if (status === "deleted") {
+    const patch = await createTrackedFilePatch(repositoryRoot, relativePath, entry.originalPath);
+    return patch?.includes("\n@@ ") ? { supported: true, status, patch } : { supported: false };
+  }
+
+  let stat: ReturnType<typeof lstatSync>;
+  try {
+    stat = lstatSync(resolvedFilePath);
+  } catch {
+    return { supported: false };
+  }
+  if (!stat.isFile() || stat.size > TEXT_PREVIEW_MAX_BYTES) return { supported: false };
+
+  const content = readFileSync(resolvedFilePath);
+  if (hasNullByte(content)) return { supported: false };
+  const newContent = content.toString("utf8");
+  const patch = status === "untracked"
+    ? createAddedFilePatch(relativePath, newContent)
+    : await createTrackedFilePatch(repositoryRoot, relativePath, entry.originalPath)
+      ?? (status === "added" ? createAddedFilePatch(relativePath, newContent) : null);
+
+  return patch?.includes("\n@@ ") ? { supported: true, status, patch } : { supported: false };
+}

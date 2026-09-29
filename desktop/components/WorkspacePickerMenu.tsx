@@ -1,0 +1,234 @@
+"use client";
+
+import { useCallback, useState } from "react";
+import {
+  Check,
+  FolderOpen,
+  Lightning,
+  MagnifyingGlass,
+} from "@phosphor-icons/react";
+import { useI18n } from "@/hooks/useI18n";
+import { samePath } from "@/lib/path-match";
+import { useWorkspaceActions } from "@/hooks/useWorkspaceActions";
+import { RunningSessionIndicator, UnreadSessionIndicator } from "@/components/SessionActivityIndicators";
+
+/**
+ * Shared workspace picker menu — the project search + recent/quick project
+ * list + quick-workspace/custom-path actions. Used by the classic title-bar
+ * selector, the welcome-page selector and the tabs view "+" menu, so every
+ * entry point behaves identically.
+ *
+ * The menu owns its own search and custom-path input state, so multiple menu
+ * instances (title bar + welcome page) never interfere. Parent dropdowns
+ * unmount the menu when closed, which resets that transient state.
+ */
+
+interface WorkspacePickerMenuProps {
+  /** All projects sorted by recent activity (unfiltered). */
+  projects: string[];
+  /** Currently selected project (classic selector highlight). Omit in tabs
+   *  view mode — the picker opens workspaces, it does not single-select. */
+  selectedProject?: string | null;
+  /** Per-workspace running/unread counts for the list-item indicators. */
+  activity: Map<string, { running: number; unread: number }>;
+  /** Workspace keys currently open as tabs (tabs view mode), in tab order.
+   *  Rendered as their own group above Recent Projects and excluded from the
+   *  other groups; omitted/empty in classic view (no tabs exist). */
+  openWorkspaces?: string[];
+  homeDir: string;
+  /** Called with the resolved project path whenever one is chosen
+   *  (recent project, quick workspace or a validated custom path). */
+  onSelectProject: (project: string) => void;
+  /** Called when the user presses Escape with an empty search box. */
+  onRequestClose?: () => void;
+}
+
+function pathBaseName(path: string): string {
+  return path.replace(/[\\/]+$/, "").split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+
+/** True for quick workspaces created by the default-cwd endpoint as
+ *  ~/pi-cwd-<YYYYMMDD> (same shape the server uses to seed the allow-list). */
+function isQuickWorkspace(cwd: string, homeDir?: string): boolean {
+  if (!homeDir) return false;
+  const normalizedCwd = cwd.replace(/\\/g, "/");
+  const normalizedHome = homeDir.replace(/\\/g, "/");
+  if (!normalizedCwd.startsWith(normalizedHome)) return false;
+  const firstSegment = normalizedCwd.slice(normalizedHome.length).replace(/^\/+/, "").split("/")[0] ?? "";
+  return /^pi-cwd-\d{8}$/.test(firstSegment);
+}
+
+export function WorkspacePickerMenu({
+  projects,
+  selectedProject,
+  activity,
+  openWorkspaces,
+  homeDir,
+  onSelectProject,
+  onRequestClose,
+}: WorkspacePickerMenuProps) {
+  const { t } = useI18n();
+  const [projectFilter, setProjectFilter] = useState("");
+  const {
+    openFolderPicker,
+    openQuickWorkspace,
+    commitCustomPath,
+    cancelCustomPath,
+    customPathOpen,
+    customPathValue,
+    setCustomPathValue,
+    customPathError,
+    setCustomPathError,
+    customPathValidating,
+    customPathInputRef,
+  } = useWorkspaceActions(onSelectProject);
+
+  const selectProject = useCallback((project: string) => {
+    setProjectFilter("");
+    cancelCustomPath();
+    onSelectProject(project);
+  }, [cancelCustomPath, onSelectProject]);
+
+  // Path-aware membership check: tab keys are workspaceKeyOf() values and
+  // the picker list uses s.projectRoot ?? s.cwd, so on Windows the same
+  // workspace can differ in drive-letter case / separators.
+  const isOpenWorkspace = useCallback(
+    (project: string) => (openWorkspaces ?? []).some((key) => samePath(key, project)),
+    [openWorkspaces],
+  );
+
+  const visibleProjects = projectFilter.trim()
+    ? projects.filter((p) => p.toLowerCase().includes(projectFilter.trim().toLowerCase()))
+    : projects;
+  // Open workspaces are their own group (in tab order); a project opened as
+  // a tab is a stronger state than "recent"/"quick", so it is excluded from
+  // those groups instead of appearing twice.
+  const openProjects = (openWorkspaces ?? []).filter(
+    (key) => !projectFilter.trim() || key.toLowerCase().includes(projectFilter.trim().toLowerCase()),
+  );
+  const recentProjects = visibleProjects.filter((p) => !isOpenWorkspace(p));
+  const quickProjects = recentProjects.filter((p) => isQuickWorkspace(p, homeDir));
+
+  const projectSearch = (
+    <div style={{ borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+      <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+        <MagnifyingGlass size={13} color="var(--text-dim)" style={{ position: "absolute", left: 12, pointerEvents: "none" }} aria-hidden="true" />
+        <input
+          value={projectFilter}
+          onChange={(e) => setProjectFilter(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              if (projectFilter) setProjectFilter("");
+              else onRequestClose?.();
+            }
+          }}
+          placeholder={t("desktop.searchProjects")}
+          aria-label={t("desktop.searchProjects")}
+          autoFocus
+          style={{ width: "100%", padding: "8px 12px 8px 34px", background: "transparent", border: "none", outline: "none", color: "var(--text)", fontSize: 12, fontFamily: "var(--font-mono)", boxSizing: "border-box" }}
+        />
+      </div>
+    </div>
+  );
+
+  const projectGroupHeader = (label: string) => (
+    <div style={{ padding: "5px 8px 3px", fontSize: 10, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.07em" }}>{label}</div>
+  );
+
+  const projectItem = (project: string, isOpen = false) => {
+    const isSelected = project === selectedProject;
+    const isQuick = isQuickWorkspace(project, homeDir);
+    const entry = activity.get(project);
+    const runningCount = entry?.running ?? 0;
+    const unreadCount = entry?.unread ?? 0;
+    return (
+      <button key={project} onClick={() => selectProject(project)} title={project} style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "3px 8px", background: isSelected ? "var(--bg-selected)" : "transparent", border: "none", borderRadius: 5, color: isSelected ? "var(--accent)" : "var(--text)", cursor: "pointer", textAlign: "left", fontSize: 12, fontFamily: "var(--font-mono)", minWidth: 0 }} onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = "var(--bg-hover)"; }} onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = "transparent"; }}>
+        {isSelected ? (
+          <Check size={12} color="var(--accent)" weight="bold" style={{ flexShrink: 0 }} aria-hidden="true" />
+        ) : isQuick ? (
+          <Lightning size={12} color="var(--text-dim)" weight="regular" style={{ flexShrink: 0 }} aria-hidden="true" />
+        ) : isOpen ? (
+          // Open-as-tab marker: a filled dot distinct from the selected Check
+          <span style={{ width: 12, display: "inline-flex", justifyContent: "center", flexShrink: 0 }} aria-hidden="true">
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--text-dim)" }} />
+          </span>
+        ) : (
+          <span style={{ width: 12, flexShrink: 0 }} />
+        )}
+        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pathBaseName(project)}</span>
+        {(runningCount > 0 || unreadCount > 0) && (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+            {runningCount > 0 && (
+              <span title={t("desktop.agentRunning")} style={{ display: "inline-flex", alignItems: "center", gap: 2, color: "var(--accent)", fontSize: 10, lineHeight: 1 }}>
+                <RunningSessionIndicator />
+                {runningCount > 1 && <span>{runningCount}</span>}
+              </span>
+            )}
+            {unreadCount > 0 && (
+              <span title={t("desktop.newActivity")} style={{ display: "inline-flex", alignItems: "center", gap: 2, color: "var(--accent)", fontSize: 10, lineHeight: 1 }}>
+                <UnreadSessionIndicator />
+                {unreadCount > 1 && <span>{unreadCount}</span>}
+              </span>
+            )}
+          </span>
+        )}
+      </button>
+    );
+  };
+
+  const projectList = (
+    <div style={{ maxHeight: "min(calc(46vh / var(--app-ui-scale, 1)), 360px)", overflowY: "auto", flex: 1, minHeight: 0, padding: "4px" }}>
+      {openProjects.length > 0 && (
+        <>
+          {projectGroupHeader(t("desktop.openWorkspaces"))}
+          {openProjects.map((p) => projectItem(p, true))}
+        </>
+      )}
+      {recentProjects.length > 0 && (
+        <>
+          {projectGroupHeader(t("desktop.recentProjects"))}
+          {recentProjects.map((p) => projectItem(p, false))}
+        </>
+      )}
+      {quickProjects.length > 0 && (
+        <>
+          {projectGroupHeader(t("desktop.quickWorkspaces"))}
+          {quickProjects.map((p) => projectItem(p, false))}
+        </>
+      )}
+      {recentProjects.length === 0 && openProjects.length === 0 && <div style={{ padding: "8px", fontSize: 12, color: "var(--text-dim)" }}>{projectFilter.trim() ? t("desktop.noMatchingProjects") : t("desktop.noProjectsYet")}</div>}
+    </div>
+  );
+
+  const projectActions = (
+    <div style={{ borderTop: "1px solid var(--border)", padding: "4px", flexShrink: 0 }}>
+      <button onClick={(e) => { e.stopPropagation(); void openQuickWorkspace(); }} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "7px 8px", background: "transparent", border: "none", borderRadius: 5, color: "var(--text-muted)", cursor: "pointer", textAlign: "left", fontSize: 12 }} onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text)"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--text-muted)"; }}>
+        <Lightning size={14} weight="regular" style={{ flexShrink: 0 }} aria-hidden="true" />
+        <span>{t("desktop.quickWorkspace")}</span>
+      </button>
+      {!customPathOpen ? (
+        <button onClick={(e) => { e.stopPropagation(); void openFolderPicker(); }} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "7px 8px", background: "transparent", border: "none", borderRadius: 5, color: "var(--text-muted)", cursor: "pointer", textAlign: "left", fontSize: 12 }} onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text)"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--text-muted)"; }}>
+          <FolderOpen size={14} weight="regular" style={{ flexShrink: 0 }} aria-hidden="true" />
+          <span>{t("desktop.selectFolder")}</span>
+        </button>
+      ) : (
+        <div style={{ padding: "6px 4px 4px" }}>
+          <input ref={customPathInputRef} value={customPathValue} onChange={(e) => { setCustomPathValue(e.target.value); setCustomPathError(null); }} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void commitCustomPath(); } if (e.key === "Escape") { cancelCustomPath(); } }} placeholder={t("desktop.projectPathPlaceholder")} style={{ width: "100%", fontSize: 11, fontFamily: "var(--font-mono)", padding: "5px 8px", border: "1px solid var(--accent)", borderRadius: 5, outline: "none", background: "var(--bg)", color: "var(--text)", boxSizing: "border-box" }} />
+          {customPathError && <div style={{ marginTop: 5, color: "#dc2626", fontSize: 11, lineHeight: 1.35, overflowWrap: "anywhere" }}>{customPathError}</div>}
+          <div style={{ display: "flex", gap: 5, marginTop: 5 }}>
+            <button onClick={() => void commitCustomPath()} disabled={customPathValidating || !customPathValue.trim()} style={{ flex: 1, padding: "4px 0", background: "var(--accent)", border: "none", borderRadius: 5, color: "#fff", fontSize: 11, fontWeight: 600, cursor: customPathValidating || !customPathValue.trim() ? "not-allowed" : "pointer", opacity: customPathValidating || !customPathValue.trim() ? 0.65 : 1 }}>{customPathValidating ? t("desktop.checking") : t("desktop.open")}</button>
+            <button onClick={cancelCustomPath} style={{ flex: 1, padding: "4px 0", background: "var(--bg-hover)", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text-muted)", fontSize: 11, cursor: "pointer" }}>{t("desktop.cancel")}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <>
+      {projectSearch}
+      {projectList}
+      {projectActions}
+    </>
+  );
+}

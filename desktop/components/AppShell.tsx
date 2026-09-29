@@ -1,0 +1,1641 @@
+"use client";
+
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
+import dynamic from "next/dynamic";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { WelcomeLobby } from "./WelcomeLobby";
+import { SessionSidebar } from "./SessionSidebar";
+import { BTLibrary } from "./BTLibrary";
+import { WallpaperLayer } from "./WallpaperLayer";
+import { ChatWindow } from "./ChatWindow";
+import { TabBar } from "./TabBar";
+import { RightPanelEmptyState } from "./RightPanelEmptyState";
+import { WorkspaceTabBar } from "./WorkspaceTabBar";
+import { fileTabId, changesTabId, gitGraphTabId, isFileTab, openFileTab, openViewTab, type Tab } from "./tab-model";
+import { ChangesTabView } from "./ChangesTabView";
+import { GitGraphTab } from "./GitGraphTab";
+import type { SettingsTab } from "./SettingsModal";
+import { AppTitleBar } from "./AppTitleBar";
+import { ProjectTrustDialog } from "./ProjectTrustDialog";
+import { useTheme } from "@/hooks/useTheme";
+import { useAudio } from "@/hooks/useAudio";
+import { useNotifications } from "@/hooks/useNotifications";
+import { useI18n } from "@/hooks/useI18n";
+import { useIsMobile } from "@/hooks/useIsMobile";
+import { useResizablePanel } from "@/hooks/useResizablePanel";
+import { useViewMode } from "@/hooks/useViewMode";
+import { useWorkspaceTabs } from "@/hooks/useWorkspaceTabs";
+import { closeTab as closeWorkspaceTab, loadWorkspaceTabs, saveWorkspaceTabs, type WorkspaceTabsState } from "@/lib/workspace-tabs";
+import type { WorkspaceSwitchRequest } from "@/lib/workspace-switch";
+import {
+  getDefaultRightPanelWidth,
+  getRightPanelMaxWidth,
+  getSidebarMaxWidth,
+  RIGHT_PANEL_MAX_WIDTH,
+  RIGHT_PANEL_MIN_WIDTH,
+  SIDEBAR_DEFAULT_WIDTH,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+} from "@/lib/panel-layout";
+import { copyText } from "@/lib/clipboard";
+import { getFileName, encodeFilePathForApi } from "@/lib/file-paths";
+import { buildAtMentionText, buildFileAtMentionsText } from "@/lib/file-fuzzy";
+import { clearDraft, getDraft } from "@/lib/draft-store";
+import { cssPx } from "@/lib/ui-scale";
+import {
+  createDraftSession,
+  loadDraftSessions,
+  removeDraftSession,
+  renameDraftSession,
+  saveDraftSessions,
+  type DraftSession,
+} from "@/lib/draft-sessions";
+import { clearLastWorkspace, clearWelcomeState, getLastOpen, setLastOpen, setLastWorkspace, setWelcomeState, workspaceKeyOf } from "@/lib/workspace-memory";
+import { loadRightTabs, saveRightTabs } from "@/lib/right-tabs-memory";
+import { resolveDraftTarget, resolveRestoreTarget, type RestoreTarget } from "@/lib/workspace-restore";
+import { getSessionList } from "@/lib/session-list";
+import { samePath } from "@/lib/path-match";
+import { getSessionDisplayFirstMessage } from "@/lib/skill-block";
+import { getTitleAutoEnabled, getTitleModel } from "@/lib/title-settings";
+import type { SessionInfo } from "@/lib/types";
+import type { ChatInputHandle } from "./ChatInput";
+import type { SessionStatsInfo } from "@/lib/pi-types";
+import type { ProjectTrustStatus } from "@/lib/api-types";
+
+type SessionCopyField = "file" | "id";
+
+const FileViewer = dynamic(() => import("./FileViewer").then((m) => m.FileViewer));
+const SettingsModal = dynamic(() => import("./SettingsModal").then((m) => m.SettingsModal));
+
+// Short label for a path shown in the completion popup: the last path segment
+// (project folder name), handling both / and \ separators and trailing slashes.
+function lastPathSegment(p: string): string {
+  const cleaned = p.replace(/[\\/]+$/, "");
+  const parts = cleaned.split(/[\\/]/);
+  return parts[parts.length - 1] || cleaned;
+}
+
+function formatTokenCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
+
+/** Whether the files API can still read a restored tab's path; unreadable
+ *  tabs (deleted files, inaccessible roots) are dropped on restore. */
+async function probeFileReadable(filePath: string, sourceSessionId?: string | null): Promise<boolean> {
+  try {
+    const searchParams = new URLSearchParams({ type: "read" });
+    if (sourceSessionId) searchParams.set("sessionId", sourceSessionId);
+    const response = await fetch(`/api/files/${encodeFilePathForApi(filePath)}?${searchParams.toString()}`);
+    if (!response.ok) return false;
+    const data = await response.json() as { error?: string };
+    return !data.error;
+  } catch {
+    return false;
+  }
+}
+
+export function AppShell() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { isDark, toggleTheme } = useTheme();
+  // Single shared audio instance: the completion sound is also played for
+  // sessions that finish in the background (other workspaces, or a session
+  // that is not the one open in the chat area). Sharing the instance means
+  // the AudioContext unlocked by a ChatInput gesture is the same one the
+  // sidebar plays through.
+  const { soundEnabled, onSoundToggle, playDoneSound, unlockAudio, soundEnabledRef } = useAudio();
+  const { notificationsEnabled, onNotificationsToggle, notifyDone } = useNotifications();
+  const { t } = useI18n();
+  const isMobile = useIsMobile();
+  const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
+  const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
+  const handleRunningSessionIdsChange = useCallback((ids: Set<string>) => {
+    setRunningSessionIds((previous) => {
+      if (previous.size === ids.size && [...ids].every((id) => previous.has(id))) return previous;
+      return ids;
+    });
+  }, []);
+  // When user clicks +, we only store the cwd — no fake session id
+  const [newSessionCwd, setNewSessionCwd] = useState<string | null>(null);
+  // Unsent "draft" sessions shown in the sidebar list (pure client-side, pi
+  // knows nothing about them until the first message is sent).
+  const [draftSessions, setDraftSessions] = useState<DraftSession[]>(() => loadDraftSessions());
+  // The draft currently open in the composer (its id doubles as the ChatInput
+  // draft key so typed text is keyed to the draft).
+  const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
+  const activeDraftIdRef = useRef<string | null>(null);
+  useEffect(() => { activeDraftIdRef.current = activeDraftId; }, [activeDraftId]);
+  useEffect(() => { saveDraftSessions(draftSessions); }, [draftSessions]);
+
+  // An empty new session is not a meaningful draft. Drop drafts that never
+  // received any typed content on startup (they only clutter the list).
+  useEffect(() => {
+    setDraftSessions((prev) => {
+      const meaningful = prev.filter((d) => getDraft(d.id) !== null);
+      return meaningful.length === prev.length ? prev : meaningful;
+    });
+  }, []);
+
+  // Drop the currently open draft when it never got any content (typed text
+  // or attached images). Used when leaving a draft for another session.
+  const cleanupEmptyActiveDraft = useCallback(() => {
+    const id = activeDraftIdRef.current;
+    if (!id) return;
+    if (getDraft(id)) return; // has content — keep it
+    setDraftSessions((prev) => removeDraftSession(prev, id));
+    clearDraft(id);
+  }, []);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [sessionKey, setSessionKey] = useState(0);
+  // Pending full-text-search jump: the entry (and optional block) to reveal
+  // once the targeted session's ChatWindow has finished loading.
+  const [searchTarget, setSearchTarget] = useState<{ sessionId: string; entryId: string; blockIndex?: number } | null>(null);
+  const handleSearchTargetHandled = useCallback((target: { sessionId: string; entryId: string }) => {
+    setSearchTarget((current) => current === target ? null : current);
+  }, []);
+  // Session id currently having its title regenerated (disables the sidebar
+  // menu item and guards against double-triggering).
+  const [titleGeneratingId, setTitleGeneratingId] = useState<string | null>(null);
+  // ── Startup splash (readiness signal) ──────────────────────────────────
+  // The CSS-only body::before Pi logo stays visible until the whole startup
+  // chain is ready: session list loaded + workspace auto-selected, and the
+  // restored session's content rendered (or no session content to wait for).
+  // Only then do we add html.pi-booted to fade it out, so the user sees a
+  // fully prepared page. (The ready state lives here; the visual layer is
+  // pure CSS in globals.css — there is no React overlay to unmount.)
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
+  const [contentReady, setContentReady] = useState<boolean | null>(null);
+  const handleSessionsLoaded = useCallback(() => setSessionsLoaded(true), []);
+  const waitForContent = useCallback(() => setContentReady(false), []);
+  const contentDone = useCallback(() => setContentReady(true), []);
+  useEffect(() => {
+    if (sessionsLoaded && contentReady === true) {
+      document.documentElement.classList.add("pi-booted");
+    }
+  }, [sessionsLoaded, contentReady]);
+  const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("models");
+  const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
+  const [projectTrust, setProjectTrust] = useState<ProjectTrustStatus | null>(null);
+  const [projectTrustDialogOpen, setProjectTrustDialogOpen] = useState(false);
+  const [projectTrustBusy, setProjectTrustBusy] = useState(false);
+  const [projectTrustError, setProjectTrustError] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // True while the session list has loaded and contains no sessions and no
+  // drafts anywhere (brand-new user: no pi workspace has ever been selected).
+  // The sidebar is hidden and its toggle disabled until a workspace exists.
+  const [noWorkspaceEver, setNoWorkspaceEver] = useState(false);
+  const [btFirstRun, setBTFirstRun] = useState(false);
+  // True once the sidebar was auto-collapsed because of the no-workspace
+  // state; the next workspace appearing re-opens it (user intent per the
+  // welcome flow), while a plain reload keeps the user's own collapse choice.
+  const handleNoWorkspaceChange = useCallback((isEmpty: boolean) => {
+    // BT's Memory and personal-project navigation must remain reachable on first launch.
+    setNoWorkspaceEver(false);
+    setBTFirstRun(isEmpty);
+    if (isEmpty) setSidebarOpen(true);
+  }, []);
+  const [mobileSidebarReady, setMobileSidebarReady] = useState(false);
+  // On mobile the sidebar is an overlay drawer; hide it by default so the chat
+  // is visible on load. Runs once the breakpoint resolves after hydration.
+  useEffect(() => {
+    if (isMobile) setSidebarOpen(false);
+  }, [isMobile]);
+  useEffect(() => {
+    setMobileSidebarReady(true);
+  }, []);
+  const chatInputRef = useRef<ChatInputHandle | null>(null);
+  const topBarRef = useRef<HTMLDivElement>(null);
+  const [titleWorkspaceControlsHost, setTitleWorkspaceControlsHost] = useState<HTMLDivElement | null>(null);
+  const [welcomeWorkspaceControlsHost, setWelcomeWorkspaceControlsHost] = useState<HTMLDivElement | null>(null);
+
+  const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
+
+  const handleSystemPromptChange = useCallback((prompt: string | null) => {
+    setSystemPrompt(prompt);
+  }, []);
+
+  // Session stats (tokens + cost) — populated by ChatWindow, displayed in top bar
+  const [sessionStats, setSessionStats] = useState<SessionStatsInfo | null>(null);
+  const handleSessionStatsChange = useCallback((stats: SessionStatsInfo | null) => {
+    setSessionStats(stats);
+  }, []);
+  const [copiedSessionField, setCopiedSessionField] = useState<SessionCopyField | null>(null);
+  const sessionCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleCopySessionField = useCallback((field: SessionCopyField, value: string) => {
+    void copyText(value).then(() => {
+      if (sessionCopyTimerRef.current) clearTimeout(sessionCopyTimerRef.current);
+      setCopiedSessionField(field);
+      sessionCopyTimerRef.current = setTimeout(() => setCopiedSessionField(null), 1400);
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (sessionCopyTimerRef.current) clearTimeout(sessionCopyTimerRef.current);
+    };
+  }, []);
+
+  // Context usage — populated by ChatWindow, displayed in top bar
+  const [contextUsage, setContextUsage] = useState<{ percent: number | null; contextWindow: number; tokens: number | null } | null>(null);
+  const handleContextUsageChange = useCallback((usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => {
+    setContextUsage(usage);
+  }, []);
+
+  // Single active panel — only one dropdown open at a time
+  const [activeTopPanel, setActiveTopPanel] = useState<"system" | "session" | null>(null);
+  const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
+
+
+  const openSessionStatsPanel = useCallback(() => {
+    if (isMobile) setSidebarOpen(false);
+    setActiveTopPanel("session");
+  }, [isMobile]);
+
+  const handleSidebarToggle = useCallback(() => {
+    if (isMobile) setActiveTopPanel(null);
+    setSidebarOpen((open) => !open);
+  }, [isMobile]);
+
+  useEffect(() => {
+    if (!activeTopPanel || !topBarRef.current) return;
+    const update = () => {
+      const rect = topBarRef.current!.getBoundingClientRect();
+      // rect is physical; the fixed dropdown below positions in CSS pixels
+      // that zoom paints at scale, so convert once here.
+      setTopPanelPos({ top: cssPx(rect.bottom), left: cssPx(rect.left), width: cssPx(rect.width) });
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(topBarRef.current);
+    return () => ro.disconnect();
+  }, [activeTopPanel]);
+
+  // Right panel — tabs of different kinds (files, changes review, git graph)
+  const [fileTabs, setFileTabs] = useState<Tab[]>([]);
+  const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
+  // Bumped whenever a tab is opened explicitly (file open / view-tab open)
+  // so the right-panel TabBar reveals the newly active tab; programmatic
+  // switches (close fallback, workspace restore) never bump it.
+  const [rightTabsFocusToken, setRightTabsFocusToken] = useState(0);
+  const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  // Tabs whose content is (or was) mounted. Keep-alive rendering: a tab's
+  // component stays mounted once activated and is merely hidden while
+  // inactive, so switching tabs never re-fetches or loses live state. Tabs
+  // are mounted lazily on first activation so a restored workspace only
+  // fetches the tab the user actually left open.
+  const [mountedTabIds, setMountedTabIds] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => {
+    if (!activeFileTabId) return;
+    setMountedTabIds((prev) => (prev.has(activeFileTabId) ? prev : new Set(prev).add(activeFileTabId)));
+  }, [activeFileTabId]);
+  // A closed tab's keep-alive entry must not survive: re-opening the same
+  // path later must mount a fresh viewer, not resurrect the closed one.
+  useEffect(() => {
+    setMountedTabIds((prev) => {
+      const next = new Set([...prev].filter((id) => fileTabs.some((tab) => tab.id === id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [fileTabs]);
+
+  // ── Right-panel tab persistence ────────────────────────────────────────────
+  // Tabs are stored per workspace (project root, else cwd) so a restart
+  // restores what was open and switching workspaces swaps the tab set instead
+  // of mixing them. Latest-value refs let the workspace-transition effect save
+  // the outgoing workspace's tabs without depending on tab state the restore
+  // is about to replace.
+  const [activeWorkspaceKey, setActiveWorkspaceKey] = useState<string | null>(null);
+  const fileTabsRef = useRef(fileTabs);
+  const activeFileTabIdRef = useRef(activeFileTabId);
+  const rightPanelOpenRef = useRef(rightPanelOpen);
+  const activeWorkspaceKeyRef = useRef<string | null>(null);
+  useEffect(() => { fileTabsRef.current = fileTabs; }, [fileTabs]);
+  useEffect(() => { activeFileTabIdRef.current = activeFileTabId; }, [activeFileTabId]);
+  useEffect(() => { rightPanelOpenRef.current = rightPanelOpen; }, [rightPanelOpen]);
+
+  useEffect(() => {
+    const outgoingKey = activeWorkspaceKeyRef.current;
+    activeWorkspaceKeyRef.current = activeWorkspaceKey;
+    if (outgoingKey && outgoingKey !== activeWorkspaceKey) {
+      saveRightTabs(outgoingKey, {
+        tabs: fileTabsRef.current,
+        activeTabId: activeFileTabIdRef.current,
+        open: rightPanelOpenRef.current,
+      });
+    }
+    if (!activeWorkspaceKey) return;
+    const entry = loadRightTabs(activeWorkspaceKey);
+    if (!entry || entry.tabs.length === 0) {
+      // The workspace has no stored tab set: never bleed the previous
+      // workspace's tabs into it.
+      setFileTabs([]);
+      setActiveFileTabId(null);
+      if (entry) setRightPanelOpen(entry.open);
+      return;
+    }
+    const tabsAtRestoreStart = fileTabsRef.current;
+    let cancelled = false;
+    void (async () => {
+      // File tabs whose path no longer resolves are dropped silently; view
+      // tabs belong to this workspace by construction and are kept.
+      const readable = await Promise.all(entry.tabs.map(async (tab) => {
+        if (!isFileTab(tab)) return true;
+        return probeFileReadable(tab.filePath, tab.sourceSessionId);
+      }));
+      if (cancelled) return;
+      const valid = entry.tabs.filter((_, index) => readable[index]);
+      // Tabs opened while the probe ran (e.g. the user double-clicked a file
+      // in the explorer) survive the restore.
+      const openedSinceStart = fileTabsRef.current.filter(
+        (tab) => !tabsAtRestoreStart.some((t) => t.id === tab.id) && !valid.some((t) => t.id === tab.id),
+      );
+      const restored = [...valid, ...openedSinceStart];
+      setFileTabs(restored);
+      setActiveFileTabId(
+        restored.some((t) => t.id === entry.activeTabId)
+          ? entry.activeTabId
+          : restored[restored.length - 1]?.id ?? null,
+      );
+      setRightPanelOpen(entry.open && restored.length > 0);
+    })();
+    return () => { cancelled = true; };
+  }, [activeWorkspaceKey]);
+
+  // Debounced save of the current tab set — viewer scroll snapshots flow
+  // through fileTabs, so writes must not happen on every change.
+  useEffect(() => {
+    const key = activeWorkspaceKeyRef.current;
+    if (!key) return;
+    const timer = setTimeout(() => {
+      saveRightTabs(key, { tabs: fileTabs, activeTabId: activeFileTabId, open: rightPanelOpen });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [fileTabs, activeFileTabId, rightPanelOpen]);
+
+  // Flush on unload so the final tab state survives an Electron close.
+  useEffect(() => {
+    const flush = () => {
+      const key = activeWorkspaceKeyRef.current;
+      if (key) {
+        saveRightTabs(key, {
+          tabs: fileTabsRef.current,
+          activeTabId: activeFileTabIdRef.current,
+          open: rightPanelOpenRef.current,
+        });
+      }
+    };
+    window.addEventListener("beforeunload", flush);
+    return () => window.removeEventListener("beforeunload", flush);
+  }, []);
+
+  const sidebarWidthRef = useRef(SIDEBAR_DEFAULT_WIDTH);
+  const rightPanelWidthRef = useRef(getDefaultRightPanelWidth(1366));
+  const getResponsiveRightPanelWidth = useCallback(
+    () => typeof window === "undefined" ? getDefaultRightPanelWidth(1366) : getDefaultRightPanelWidth(window.innerWidth),
+    [],
+  );
+  const getResponsiveSidebarMaxWidth = useCallback(
+    () => typeof window === "undefined" ? SIDEBAR_MAX_WIDTH : getSidebarMaxWidth({
+      viewportWidth: window.innerWidth,
+      rightPanelOpen,
+      rightPanelWidth: rightPanelWidthRef.current,
+    }),
+    [rightPanelOpen],
+  );
+  const getResponsiveRightPanelMaxWidth = useCallback(
+    () => typeof window === "undefined" ? RIGHT_PANEL_MAX_WIDTH : getRightPanelMaxWidth({
+      viewportWidth: window.innerWidth,
+      sidebarOpen,
+      sidebarWidth: sidebarWidthRef.current,
+    }),
+    [sidebarOpen],
+  );
+  const sidebarPanel = useResizablePanel({
+    ariaLabel: t("desktop.resizeSidebar"),
+    cssVariable: "--sidebar-width",
+    defaultWidth: SIDEBAR_DEFAULT_WIDTH,
+    getMaxWidth: getResponsiveSidebarMaxWidth,
+    growthDirection: "right",
+    maxWidth: SIDEBAR_MAX_WIDTH,
+    minWidth: SIDEBAR_MIN_WIDTH,
+    storageKey: "pi-sidebar-width",
+    widthRef: sidebarWidthRef,
+  });
+  const rightPanel = useResizablePanel({
+    ariaLabel: t("desktop.resizeFilePanel"),
+    cssVariable: "--right-panel-width",
+    defaultWidth: getDefaultRightPanelWidth(1366),
+    getDefaultWidth: getResponsiveRightPanelWidth,
+    getMaxWidth: getResponsiveRightPanelMaxWidth,
+    growthDirection: "left",
+    maxWidth: RIGHT_PANEL_MAX_WIDTH,
+    minWidth: RIGHT_PANEL_MIN_WIDTH,
+    storageKey: "pi-right-panel-width",
+    widthRef: rightPanelWidthRef,
+  });
+  const reclampSidebarWidth = sidebarPanel.reclampWidth;
+  const reclampRightPanelWidth = rightPanel.reclampWidth;
+  useEffect(() => {
+    if (!rightPanelOpen) return;
+    reclampSidebarWidth();
+    reclampRightPanelWidth();
+  }, [reclampRightPanelWidth, reclampSidebarWidth, rightPanelOpen]);
+
+  // Same @mention format as the chat input's @ autocomplete, so the agent's
+  // read tool resolves it the same way (it strips the @ prefix).
+  const handleAtMention = useCallback((relativePath: string, isDir: boolean) => {
+    chatInputRef.current?.insertText(buildAtMentionText(relativePath, isDir));
+  }, []);
+
+  const handleAtMentions = useCallback((relativePaths: string[]) => {
+    const mentions = buildFileAtMentionsText(relativePaths);
+    if (mentions) chatInputRef.current?.insertText(mentions);
+  }, []);
+
+  const [initialSessionId] = useState<string | null>(() => searchParams.get("session"));
+  const [activeCwd, setActiveCwd] = useState<string | null>(null);
+
+  // Welcome-state safety net: whenever the session list has loaded and no
+  // workspace/session is open (new user, welcome state armed, all tabs
+  // closed), no session content will ever arrive to dismiss the splash —
+  // mark readiness so the lobby is not trapped behind the Pi logo overlay.
+  // One tick later so a just-queued startup auto-select (sidebar cwd notify)
+  // applies first and its waitForContent() wins.
+  useEffect(() => {
+    if (!sessionsLoaded) return;
+    if (activeCwd !== null || selectedSession !== null || newSessionCwd !== null) return;
+    const t = setTimeout(() => setContentReady(true), 0);
+    return () => clearTimeout(t);
+  }, [sessionsLoaded, activeCwd, selectedSession, newSessionCwd]);
+
+  // ── Tabs view mode ──────────────────────────────────────────────────────
+  const { viewMode } = useViewMode();
+  const viewModeRef = useRef(viewMode);
+  useEffect(() => { viewModeRef.current = viewMode; }, [viewMode]);
+  const tabsApi = useWorkspaceTabs();
+  const tabsState = tabsApi.state;
+  const tabsStateRef = useRef(tabsState);
+  useEffect(() => { tabsStateRef.current = tabsState; }, [tabsState]);
+  // Bumped when a workspace is picked from a picker menu while tabs view is
+  // active; the workspace tab strip uses it to reveal the newly opened tab
+  // (explicit intent) without scrolling on programmatic switches.
+  const [workspaceTabFocusToken, setWorkspaceTabFocusToken] = useState(0);
+  // Workspace project list + per-project running/unread counts, reported by
+  // the sidebar (it owns the session list) for the title-bar tab bar.
+  const [workspaceActivity, setWorkspaceActivity] = useState<{
+    projects: string[];
+    activity: Map<string, { running: number; unread: number }>;
+  }>({ projects: [], activity: new Map() });
+  // Keys of the workspaces currently open as tabs, in tab order — consumed
+  // by the "Open Workspaces" group of the title-bar " + " picker menu.
+  const openWorkspaceKeys = useMemo(
+    () => tabsState.tabs.map((tab) => tab.key),
+    [tabsState.tabs],
+  );
+  // Cwd switch requests for the sidebar's effective cwd (tab activation,
+  // project pick, last-tab-closed). The token guarantees a fresh object
+  // reference so the requestedCwd effect re-runs even when the cwd is
+  // unchanged (request semantics survive identical values). projectKey
+  // carries the authoritative workspace identity (tab.key /
+  // workspaceKeyOf(session)) so the restore anchor never depends on the
+  // sidebar re-resolving a worktree path back to its root.
+  const [cwdRequest, setCwdRequest] = useState<WorkspaceSwitchRequest | null>(null);
+  const requestWorkspaceSwitch = useCallback((cwd: string | null, projectKey?: string | null) => {
+    setCwdRequest((prev) => ({ cwd, projectKey, token: (prev?.token ?? 0) + 1 }));
+  }, []);
+
+  // Persisted tabs (tabs view mode): restore the last session's tab list on
+  // startup and apply it over the startup auto-select (the sidebar does not
+  // know about persisted tabs). Pending restore is consumed by the first
+  // cwd change; a manual interaction before auto-select still restores the
+  // tab list but keeps the user's chosen workspace.
+  const pendingRestoreRef = useRef<WorkspaceTabsState | null>(null);
+  useEffect(() => {
+    if (viewMode !== "tabs") return;
+    const saved = loadWorkspaceTabs();
+    // loadWorkspaceTabs already returns null for an empty/invalid list.
+    if (saved) pendingRestoreRef.current = saved;
+  }, [viewMode]);
+  // Save the tab list on every change — tabs mode only, so classic mode
+  // never overwrites the stored list (its clear() would wipe it).
+  useEffect(() => {
+    if (viewMode !== "tabs") return;
+    saveWorkspaceTabs(tabsState);
+  }, [viewMode, tabsState]);
+
+  // View-mode transitions. Tabs → classic: collapse the tab list (view only
+  // — sessions keep running). Classic → tabs (or tabs-mode startup before
+  // the shell had a cwd): seed the first tab from the current workspace,
+  // never clobbering tabs the user already opened.
+  const prevViewModeRef = useRef(viewMode);
+  useEffect(() => {
+    const prev = prevViewModeRef.current;
+    prevViewModeRef.current = viewMode;
+    if (viewMode === "classic") {
+      if (prev !== viewMode) tabsApi.clear();
+      return;
+    }
+    const cwd = activeCwd ?? selectedSession?.cwd ?? newSessionCwd;
+    if (cwd && tabsStateRef.current.tabs.length === 0) {
+      tabsApi.resetToSingle(cwd, selectedSession?.projectRoot ?? cwd);
+    }
+  }, [viewMode, activeCwd, selectedSession, newSessionCwd, tabsApi]);
+
+  // Pick a project from a workspace picker menu (classic: switch cwd; tabs:
+  // open as a tab, deduped) — then move the effective cwd. The picked path is
+  // validated first (registering the allow-root and normalizing the path),
+  // mirroring the picker's custom-path flow: recommended workspaces detected
+  // from other editors are not in the file allow-list yet.
+  const openProjectTokenRef = useRef(0);
+  const handleOpenProject = useCallback((project: string) => {
+    const token = ++openProjectTokenRef.current;
+    void (async () => {
+      let cwd = project;
+      try {
+        const res = await fetch("/api/cwd/validate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cwd: project }),
+        });
+        const data = await res.json().catch(() => ({})) as { cwd?: string; error?: string };
+        if (res.ok && !data.error && data.cwd) cwd = data.cwd;
+      } catch {
+        // validation unavailable — proceed with the raw pick
+      }
+      if (token !== openProjectTokenRef.current) return; // superseded
+      if (viewModeRef.current === "tabs") {
+        tabsApi.open(cwd, cwd);
+        // Explicit picker intent: bump the token so the tab strip reveals
+        // the newly opened tab once it commits. Programmatic switches
+        // (close-tab fallback, restore) never bump and keep scroll place.
+        setWorkspaceTabFocusToken((n) => n + 1);
+      }
+      requestWorkspaceSwitch(cwd, cwd);
+    })();
+  }, [tabsApi, requestWorkspaceSwitch]);
+
+  const btInitialProjectOpened = useRef(false);
+  useEffect(() => {
+    if (!btFirstRun || btInitialProjectOpened.current || searchParams.get("session")) return;
+    btInitialProjectOpened.current = true;
+    void fetch("/api/bt").then(r => r.json()).then(data => {
+      if (data.root) handleOpenProject(data.root);
+    }).catch(() => { btInitialProjectOpened.current = false; });
+  }, [btFirstRun, handleOpenProject, searchParams]);
+
+  // Activate a workspace tab: switching the effective cwd re-runs the same
+  // single-workspace state machine as the classic view (last-open restore,
+  // session remount). Never touches the running agent session.
+  //
+  // No already-active guard: re-clicking the active tab re-issues the switch
+  // as a recovery gesture. When highlight and content agree, handleCwdChange
+  // no-ops on its same-workspace checks; when they drifted apart, the
+  // re-issue repairs them instead of being silently dropped. The fresh token
+  // makes the sidebar re-notify even for an unchanged cwd.
+  const handleSelectTab = useCallback((key: string) => {
+    const tab = tabsStateRef.current.tabs.find((t) => t.key === key);
+    if (!tab) return;
+    tabsApi.activate(key);
+    requestWorkspaceSwitch(tab.cwd, tab.key);
+  }, [tabsApi, requestWorkspaceSwitch]);
+
+  // Close a workspace tab — UX only: sessions/tasks keep running server-side.
+  // Closing the active tab moves to the right neighbour (or left when it was
+  // the last); closing the final tab returns to the welcome empty state.
+  const handleCloseTab = useCallback((key: string) => {
+    const state = tabsStateRef.current;
+    const wasActive = state.activeKey === key;
+    // Compute the next state synchronously to know where activation lands.
+    const next = closeWorkspaceTab(state, key);
+    tabsApi.close(key);
+    if (!wasActive) return;
+    const nextActive = next.tabs.find((t) => t.key === next.activeKey) ?? null;
+    if (nextActive) {
+      requestWorkspaceSwitch(nextActive.cwd, nextActive.key);
+    } else {
+      // Last tab closed — clear the view back to the welcome state. The
+      // cwd must be cleared in the SAME batch as the other states: the
+      // tabs seed effect keys off activeCwd, and the async cwdRequest
+      // clearing would arrive one render later and resurrect the tab.
+      setActiveCwd(null);
+      setActiveWorkspaceKey(null);
+      setActiveDraftId(null);
+      setSelectedSession(null);
+      setNewSessionCwd(null);
+      setSystemPrompt(null);
+      setActiveTopPanel(null);
+      setSessionKey((k) => k + 1);
+      requestWorkspaceSwitch(null);
+      // No workspace is open anymore — forget the startup auto-select
+      // anchor so a restart does not jump back to the closed workspace,
+      // and arm the welcome state so the restart stays on the welcome
+      // page until the user picks a workspace again.
+      clearLastWorkspace();
+      setWelcomeState();
+      // Drop a stale ?session= from the URL: the session-restore path
+      // (which runs before the welcome-state check on startup) would
+      // otherwise yank the next launch back into the closed workspace.
+      if (new URLSearchParams(window.location.search).has("session")) {
+        router.replace("/", { scroll: false });
+      }
+    }
+  }, [tabsApi, requestWorkspaceSwitch, router]);
+  // True once the initial ?session= URL param has been resolved (or confirmed absent)
+  const [initialSessionRestored, setInitialSessionRestored] = useState<boolean>(() => !searchParams.get("session"));
+  // Suppresses sessionKey bump in handleCwdChange during the initial URL restore
+  const suppressCwdBumpRef = useRef(false);
+  // Guards the async session restore: a lookup started by an earlier workspace
+  // switch must not land after the user already switched somewhere else.
+  const workspaceRestoreTokenRef = useRef(0);
+
+  // Open the new-session composer backed by a real draft row, matching the
+  // "+" flow. A draft is (re)created wherever the UI needs a blank composer
+  // for a workspace — welcome entry, "+" button, quick workspace.
+  const createDraft = useCallback((cwd: string, projectKey: string) => {
+    const draft = createDraftSession(cwd);
+    setDraftSessions((prev) => [draft, ...prev]);
+    setActiveDraftId(draft.id);
+    setNewSessionCwd(cwd);
+    setLastOpen(projectKey, { kind: "draft", id: draft.id });
+    return draft;
+  }, []);
+
+  const openWelcomeDraft = useCallback((cwd: string, projectKey: string) => {
+    createDraft(cwd, projectKey);
+    // A welcome draft has no session content to wait for — mark readiness.
+    contentDone();
+    // A draft is not URL-representable — drop a stale ?session= so a refresh
+    // does not yank back to the previous workspace's session.
+    if (new URLSearchParams(window.location.search).has("session")) {
+      router.replace("/", { scroll: false });
+    }
+  }, [router, contentDone, createDraft]);
+
+  // Restore the workspace's last open context after switching to it. Called
+  // from handleCwdChange once the outgoing context has been reset. The
+  // decision (remembered draft → remembered session → latest session → fresh
+  // welcome draft) is pure logic in lib/workspace-restore.ts; here it is only
+  // applied to the shell state.
+  const restoreWorkspaceContext = useCallback((cwd: string, projectKey: string) => {
+    const token = ++workspaceRestoreTokenRef.current;
+    const lastOpen = getLastOpen(projectKey);
+
+    // Remembered draft: drafts are local state, restore synchronously.
+    const draftTarget = resolveDraftTarget(lastOpen, draftSessions);
+    if (draftTarget) {
+      const { id, cwd: draftCwd } = draftTarget.draft;
+      setActiveDraftId(id);
+      setNewSessionCwd(draftCwd);
+      setLastOpen(projectKey, { kind: "draft", id });
+      contentDone();
+      if (new URLSearchParams(window.location.search).has("session")) {
+        router.replace("/", { scroll: false });
+      }
+      return;
+    }
+
+    const apply = (target: RestoreTarget) => {
+      if (token !== workspaceRestoreTokenRef.current) return; // stale switch
+      if (target.kind === "session") {
+        const s = target.session;
+        setLastOpen(projectKey, { kind: "session", id: s.id });
+        // Selecting the session must remount the chat with the session
+        // present: useAgentSession loads content in a mount-only effect, so
+        // the null-session welcome mount from the switch would never load
+        // the restored session's messages.
+        waitForContent();
+        setSelectedSession(s);
+        setSessionKey((k) => k + 1);
+        if (new URLSearchParams(window.location.search).get("session") !== s.id) {
+          router.replace(`?session=${encodeURIComponent(s.id)}`, { scroll: false });
+        }
+        return;
+      }
+      if (target.kind === "new-draft") openWelcomeDraft(cwd, projectKey);
+    };
+
+    // Session / latest-session / fresh-draft decisions need the session list
+    // (shared cache — the sidebar already fetched it at startup).
+    getSessionList()
+      .then((d) => resolveRestoreTarget({ projectKey, cwd, lastOpen, sessions: d.sessions }))
+      .then(apply)
+      .catch(() => {
+        if (token !== workspaceRestoreTokenRef.current) return;
+        // Network hiccup: keep the remembered session for a later retry.
+        openWelcomeDraft(cwd, projectKey);
+        if (lastOpen?.kind === "session") setLastOpen(projectKey, lastOpen);
+      });
+  }, [draftSessions, router, openWelcomeDraft, waitForContent, contentDone]);
+
+  const handleCwdChange = useCallback((cwd: string | null, projectRoot?: string | null, isAutoSelect = false) => {
+    // Restore the persisted tab list over the startup auto-select: the
+    // sidebar picks its last workspace, but tabs mode should land on the
+    // last active tab instead. A manual switch before auto-select still
+    // restores the tab list and keeps the user's chosen workspace.
+    if (pendingRestoreRef.current) {
+      const saved = pendingRestoreRef.current;
+      pendingRestoreRef.current = null;
+      tabsApi.restore(saved);
+      if (isAutoSelect) {
+        const active = saved.tabs.find((t) => t.key === saved.activeKey) ?? saved.tabs[0];
+        // When the persisted active tab differs from the auto-selected
+        // workspace, switch to it (re-enters this handler non-auto-select).
+        // When they coincide, fall through to the normal flow — the cwd is
+        // already the right one and restoreWorkspaceContext must still run.
+        if (active && !samePath(active.cwd, cwd)) {
+          requestWorkspaceSwitch(active.cwd, active.key);
+          return;
+        }
+      }
+    }
+    setActiveCwd(cwd);
+    setActiveWorkspaceKey(cwd ? (projectRoot ?? cwd) : null);
+    // Keep the active workspace tab's cwd in sync — worktree switches inside
+    // one project do not create new tabs (tabs are per project root). A cwd
+    // from another workspace must never bleed into the bookmark: the key is
+    // the workspace identity, and a foreign cwd would corrupt the next
+    // activation request for this tab (requesting the wrong directory and
+    // tripping the unchanged-cwd path).
+    if (cwd && viewModeRef.current === "tabs") {
+      const activeKey = tabsStateRef.current.activeKey;
+      if (activeKey && samePath(projectRoot ?? cwd, activeKey)) {
+        tabsApi.updateCwd(activeKey, cwd);
+      }
+    }
+    // Skip if cwd is null (initial mount) or during the initial URL restore.
+    if (!cwd) return;
+    if (suppressCwdBumpRef.current) {
+      suppressCwdBumpRef.current = false;
+      return;
+    }
+    // Worktrees of one repo share a project root. Moving the effective cwd
+    // within the same project (e.g. switching worktree, or clicking a session
+    // that lives in another worktree) must not close the open session.
+    const newProject = projectRoot ?? cwd;
+    // Only user-driven workspace switches record the last-active workspace.
+    // Startup auto-selection (isAutoSelect) — and the URL-restore path above
+    // (suppress) — must not reinforce a stale/incorrect memory: otherwise a
+    // bad pick (e.g. a quick-workspace draft outranking the real projects)
+    // writes itself back and every restart repeats the same wrong workspace.
+    // A user-driven pick also disarms the welcome state (armed when the last
+    // workspace tab was closed).
+    if (!isAutoSelect) {
+      setLastWorkspace(newProject);
+      clearWelcomeState();
+    }
+    if (selectedSession && samePath(workspaceKeyOf(selectedSession), newProject)) {
+      return;
+    }
+    // A welcome draft is the workspace's visible content too: re-issuing a
+    // switch to the workspace the empty draft already shows (re-click on the
+    // active tab) must not drop and recreate the draft — that would churn the
+    // composer and could land on the workspace's last session instead.
+    if (!selectedSession && activeDraftIdRef.current !== null && newSessionCwd && samePath(newSessionCwd, cwd)) {
+      return;
+    }
+    // Leaving the draft for another project: an empty draft is meaningless.
+    cleanupEmptyActiveDraft();
+    // A cross-project switch must not keep the outgoing draft key bound to the
+    // composer — it would silently write the new workspace's typing into the
+    // old project's draft (and drop that draft on send).
+    setActiveDraftId(null);
+    // Close any session that belongs to a different project — it no longer
+    // matches the selected project directory.
+    setSelectedSession(null);
+    setNewSessionCwd((prev) => {
+      if (prev && prev !== cwd) return null;
+      return prev;
+    });
+    setSessionKey((k) => k + 1);
+    setSystemPrompt(null);
+    setActiveTopPanel(null);
+    // Restore the workspace we switched to: its last session or draft, or a
+    // fresh welcome draft so the composer matches the "+" flow.
+    restoreWorkspaceContext(cwd, newProject);
+  }, [selectedSession, newSessionCwd, cleanupEmptyActiveDraft, restoreWorkspaceContext, tabsApi, requestWorkspaceSwitch]);
+
+  // Update browser tab title when workspace changes
+  useEffect(() => {
+    const name = activeCwd ? getFileName(activeCwd) || activeCwd : null;
+    document.title = name ? `${name} — BT-Agent` : "BT-Agent";
+  }, [activeCwd]);
+
+  const handleSelectSession = useCallback((session: SessionInfo, isRestore = false, entryId?: string, blockIndex?: number) => {
+    // Full-text search hits carry the entry to jump to; plain selections clear any pending target.
+    setSearchTarget(entryId ? { sessionId: session.id, entryId, blockIndex } : null);
+    // Re-clicking the already-open session must not remount the chat and
+    // re-run the full load/positioning cycle. Only skip when the effective
+    // cwd context already matches — otherwise the pending cwd move needs
+    // the full re-select flow.
+    if (!isRestore && selectedSession) {
+      const sameProject = samePath(workspaceKeyOf(selectedSession), workspaceKeyOf(session));
+      if (selectedSession.id === session.id && sameProject) {
+        if (isMobile) setSidebarOpen(false);
+        return;
+      }
+    }
+    // Leaving a draft for a real session — drop it if it never got content.
+    cleanupEmptyActiveDraft();
+    setActiveDraftId(null);
+    setNewSessionCwd(null);
+    // Move the effective cwd to the session's workspace when it is not there
+    // yet (e.g. selecting a session row from the welcome lobby, where the
+    // sidebar has no selected cwd): the worktree switcher and the file
+    // explorer are driven by that cwd. handleCwdChange short-circuits on the
+    // same-project check below, so the session stays open and the cwd lands
+    // where the sidebar's own session click would have put it.
+    if (activeCwd === null || !samePath(activeCwd, session.cwd)) {
+      requestWorkspaceSwitch(session.cwd, workspaceKeyOf(session));
+    }
+    // Tabs mode: entering a session directly (lobby rows) must surface its
+    // workspace as a tab, exactly like a project pick would. A tab that
+    // already exists must be *activated*: the strip highlight and the chat
+    // content must never disagree, or the next click on the still-highlighted
+    // tab would request a cwd the pipeline considers already-in-effect.
+    if (viewModeRef.current === "tabs") {
+      const tabKey = workspaceKeyOf(session);
+      if (!tabsStateRef.current.tabs.some((t) => t.key === tabKey)) {
+        tabsApi.open(tabKey, session.cwd);
+      } else if (tabsStateRef.current.activeKey !== tabKey) {
+        tabsApi.activate(tabKey);
+      }
+    }
+    // Wait for the session content before hiding the startup splash (only
+    // matters while the splash is still up; afterwards it is a no-op).
+    waitForContent();
+    setSelectedSession(session);
+    // Remember this session as the workspace's last open context so switching
+    // back to the workspace restores it.
+    setLastOpen(workspaceKeyOf(session), { kind: "session", id: session.id });
+    setSessionKey((k) => k + 1);
+    setSystemPrompt(null);
+    setInitialSessionRestored(true);
+    // On mobile, collapse the overlay drawer so the chat is revealed after pick.
+    if (isMobile && !isRestore) setSidebarOpen(false);
+    if (isRestore) {
+      // Suppress the redundant sessionKey bump that would come from the
+      // onCwdChange effect firing after setSelectedCwd in the sidebar
+      suppressCwdBumpRef.current = true;
+    }
+    // Skip router.replace when restoring from URL — the param is already correct
+    // and calling replace in production Next.js triggers a Suspense remount loop
+    if (!isRestore) {
+      router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
+    }
+  }, [router, isMobile, cleanupEmptyActiveDraft, selectedSession, waitForContent, activeCwd, requestWorkspaceSwitch, tabsApi]);
+
+  const handleNewSession = useCallback((_sessionId: string, cwd: string, projectRoot?: string | null) => {
+    // An empty draft is meaningless: drop the current one (if it never got
+    // content) before starting a new session.
+    cleanupEmptyActiveDraft();
+    // Register a client-side draft so the session shows up in the sidebar
+    // list right away — pi has not created anything yet.
+    createDraft(cwd, projectRoot ?? cwd);
+    setSelectedSession(null);
+    setSessionKey((k) => k + 1);
+    setSystemPrompt(null);
+    setActiveTopPanel(null);
+    if (isMobile) setSidebarOpen(false);
+    router.replace("/", { scroll: false });
+  }, [router, isMobile, cleanupEmptyActiveDraft, createDraft]);
+
+  // Global keyboard shortcuts (handles Esc, Ctrl+Alt+N etc.)
+  useGlobalKeyboardShortcuts({
+    onNewSession: (cwd: string) => handleNewSession(`kb-${Date.now()}`, cwd),
+    activeCwd,
+  });
+
+  // Client-built transient SessionInfo (new session / fork) lacks the
+  // server-computed projectRoot, which the same-project check in
+  // handleCwdChange relies on. Hydrate it from the session list so switching
+  // worktrees right after creating a session doesn't close the chat.
+  const hydrateSelectedSession = useCallback((sessionId: string) => {
+    // Shared cache (see restoreWorkspaceContext) — no second /api/sessions trip.
+    getSessionList()
+      .then((d) => {
+        const full = d.sessions.find((s) => s.id === sessionId);
+        if (!full) return;
+        setSelectedSession((prev) => (prev && prev.id === sessionId && !prev.projectRoot ? full : prev));
+        // The server-resolved projectRoot may differ from the transient key the
+        // memory was first written under — re-key it so worktree sessions are
+        // found when their workspace is reopened.
+        setLastOpen(workspaceKeyOf(full), { kind: "session", id: full.id });
+      })
+      .catch(() => {});
+  }, []);
+
+  /**
+   * Generate (or regenerate) a session title via POST /api/sessions/[id]/auto-name.
+   *
+   * While a generation is in flight the session id is tracked in
+   * `titleGeneratingId` so the sidebar row title breathes and the context-menu
+   * item is disabled. Auto mode skips silently when the toggle or a title
+   * model is missing; manual (right-click) failures simply leave the old title.
+   */
+  const generateTitleForSession = useCallback(async (
+    sessionId: string,
+    firstMessage: string | undefined,
+    mode: "first" | "regenerate",
+    manual = false,
+  ) => {
+    setTitleGeneratingId(sessionId);
+    try {
+      // Auto mode requires the user toggle; manual mode runs regardless.
+      if (!manual && !getTitleAutoEnabled()) return;
+      const titleModel = getTitleModel();
+      if (!titleModel) return;
+      const body: Record<string, unknown> = {
+        mode,
+        provider: titleModel.provider,
+        modelId: titleModel.modelId,
+      };
+      if (mode === "first" && firstMessage) body.firstMessage = firstMessage;
+      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/auto-name`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({})) as { title?: string; error?: string };
+      if (!res.ok || !data.title) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      const title = data.title.trim();
+      setSelectedSession((prev) => (prev && prev.id === sessionId ? { ...prev, name: title } : prev));
+      setRefreshKey((k) => k + 1);
+    } catch {
+      // Auto mode stays silent; manual mode leaves the old title unchanged
+      // (the user can retry from the context menu).
+    } finally {
+      setTitleGeneratingId(null);
+    }
+  }, []);
+
+  // Called by ChatWindow when a new session gets its real id from pi
+  const handleSessionCreated = useCallback((session: SessionInfo) => {
+    setNewSessionCwd(null);
+    // The new session now has real content (the first prompt already went out)
+    // — mark readiness in case the splash is still up.
+    contentDone();
+    setSelectedSession(session);
+    setLastOpen(workspaceKeyOf(session), { kind: "session", id: session.id });
+    setRefreshKey((k) => k + 1);
+    // The draft has been promoted to a real session: drop the draft record.
+    // The server already persisted the session file on the prompt command, so
+    // the next list refresh shows the real row.
+    const draftId = activeDraftIdRef.current;
+    if (draftId) {
+      setDraftSessions((prev) => removeDraftSession(prev, draftId));
+      clearDraft(draftId);
+    }
+    setActiveDraftId(null);
+    hydrateSelectedSession(session.id);
+    router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
+
+    // Auto-generate a first title from the session's first user message.
+    // Fire-and-forget: never blocks the chat flow and stays silent on failure.
+    void generateTitleForSession(session.id, session.firstMessage, "first");
+  }, [router, hydrateSelectedSession, contentDone, generateTitleForSession]);
+
+  // Build the completion popup content for a session that just finished.
+  const buildDonePayload = useCallback((session: SessionInfo | null, model: { provider: string; modelId: string } | null, stats: SessionStatsInfo | null, ctx: { percent: number | null; contextWindow: number; tokens: number | null } | null) => {
+    const workspace = session ? lastPathSegment(workspaceKeyOf(session)) : undefined;
+    const branch = session?.branch;
+    const cost = stats?.sessionId === session?.id && stats?.cost ? stats.cost : 0;
+    const parts: { workspace?: string; model?: string; usage?: string } = {};
+    if (workspace) parts.workspace = branch ? `${workspace} · ${branch}` : workspace;
+    if (model?.modelId) parts.model = model.modelId;
+    if (cost > 0 || ctx?.contextWindow) {
+      const bits: string[] = [];
+      if (cost > 0) bits.push(cost >= 0.01 ? `$${cost.toFixed(2)}` : "<$0.01");
+      if (ctx?.contextWindow) {
+        const used = ctx.tokens ?? 0;
+        const pct = ctx.percent !== null && ctx.percent !== undefined ? `${ctx.percent.toFixed(0)}%` : null;
+        bits.push(pct ? `${formatTokenCount(used)}/${formatTokenCount(ctx.contextWindow)} (${pct})` : `${formatTokenCount(used)}/${formatTokenCount(ctx.contextWindow)}`);
+      }
+      parts.usage = bits.join("  ");
+    }
+    return {
+      sessionId: session?.id,
+      // The session currently open in the main window — lets the main process
+      // suppress only the card for the conversation the user is looking at
+      // (window visible+focused), while background completions always notify.
+      focusedSessionId: selectedSession?.id,
+      // Collapse SDK-expanded <skill> blocks in the stored first message to
+      // /skill:name, matching the session list titles (lib/skill-block.ts).
+      title: session?.name
+        ?? (session?.firstMessage ? getSessionDisplayFirstMessage(session.firstMessage) : undefined)
+        ?? t("desktop.notificationTaskDone"),
+      ...parts,
+    };
+  }, [t, selectedSession]);
+
+  const handleAgentEnd = useCallback((info: { model: { provider: string; modelId: string } | null; stats: SessionStatsInfo | null; contextUsage: { percent: number | null; contextWindow: number; tokens: number | null } | null }) => {
+    setRefreshKey((k) => k + 1);
+    setExplorerRefreshKey((k) => k + 1);
+    // Screen-level completion notification — the main process suppresses it
+    // only when this session is the one open in a visible+focused window.
+    notifyDone(buildDonePayload(selectedSession, info.model, info.stats, info.contextUsage));
+  }, [buildDonePayload, notifyDone, selectedSession]);
+
+  // A session that finished while not open in the chat area (other workspace,
+  // or a second session of the current workspace) — play the completion sound
+  // when enabled, like the open session's own end tone. The card carries the
+  // same shape as the open session's: last model + accumulated cost are read
+  // back from the session file (there is no live stats handle in this shell).
+  const handleBackgroundTaskDone = useCallback(async (session: SessionInfo) => {
+    if (soundEnabledRef.current) playDoneSound();
+    // Notifications off — skip the stats fetch entirely (sound is independent).
+    if (!notificationsEnabled) return;
+    let model: { provider: string; modelId: string } | null = null;
+    let stats: SessionStatsInfo | null = null;
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`);
+      if (res.ok) {
+        const data = await res.json();
+        const s = data?.stats;
+        if (s?.model?.modelId) model = s.model;
+        if (typeof s?.cost === "number" && s.cost > 0) {
+          stats = {
+            sessionId: session.id,
+            cost: s.cost,
+            tokens: s.tokens ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          } as SessionStatsInfo;
+        }
+      }
+    } catch {
+      // Stats unavailable — keep the basic workspace/branch card.
+    }
+    notifyDone(buildDonePayload(session, model, stats, null));
+  }, [buildDonePayload, notifyDone, notificationsEnabled, playDoneSound, soundEnabledRef]);
+
+  const handleSessionForked = useCallback((newSessionId: string) => {
+    setRefreshKey((k) => k + 1);
+    setSessionKey((k) => k + 1);
+    setNewSessionCwd(null);
+    // A fork already carries the parent's content — mark readiness.
+    contentDone();
+    const forkKey = selectedSession ? workspaceKeyOf(selectedSession) : null;
+    setSelectedSession((prev) => ({
+      ...(prev ?? { path: "", cwd: "", created: "", modified: "", messageCount: 0, firstMessage: "" }),
+      id: newSessionId,
+    }));
+    if (forkKey) setLastOpen(forkKey, { kind: "session", id: newSessionId });
+    hydrateSelectedSession(newSessionId);
+    router.replace(`?session=${encodeURIComponent(newSessionId)}`, { scroll: false });
+  }, [router, hydrateSelectedSession, selectedSession, contentDone]);
+
+  const handleInitialRestoreDone = useCallback(() => {
+    setInitialSessionRestored(true);
+  }, []);
+
+  // Reopen a draft in the composer (from a sidebar click).
+  const handleSelectDraft = useCallback((draft: DraftSession, projectRoot?: string | null) => {
+    const wasActive = activeDraftIdRef.current === draft.id;
+    // Clicking the already-open draft only refocuses it — never treat that as
+    // "leaving" (an empty draft is dropped only when switching to another
+    // session). When switching to a different draft, first drop the previous
+    // one if it never got any content.
+    if (!wasActive) {
+      cleanupEmptyActiveDraft();
+    }
+    setActiveDraftId(draft.id);
+    setSelectedSession(null);
+    setNewSessionCwd(draft.cwd);
+    setLastOpen(projectRoot ?? draft.cwd, { kind: "draft", id: draft.id });
+    setSessionKey((k) => k + 1);
+    setSystemPrompt(null);
+    setActiveTopPanel(null);
+    if (isMobile) setSidebarOpen(false);
+    router.replace("/", { scroll: false });
+  }, [router, isMobile, cleanupEmptyActiveDraft]);
+
+  const handleDeleteDraft = useCallback((draftId: string) => {
+    setDraftSessions((prev) => removeDraftSession(prev, draftId));
+    clearDraft(draftId);
+    // If the deleted draft was the open composer, close the chat area.
+    if (activeDraftIdRef.current === draftId) {
+      setActiveDraftId(null);
+      setNewSessionCwd(null);
+      setSessionKey((k) => k + 1);
+      setSystemPrompt(null);
+      setActiveTopPanel(null);
+      router.replace("/", { scroll: false });
+    }
+  }, [router]);
+
+  const handleRenameDraft = useCallback((draftId: string, name: string) => {
+    setDraftSessions((prev) => renameDraftSession(prev, draftId, name));
+  }, []);
+
+  const handleSessionRenamed = useCallback((id: string, name: string) => {
+    setSelectedSession((prev) => (prev && prev.id === id ? { ...prev, name } : prev));
+  }, []);
+
+  const handleSessionDeleted = useCallback((sessionId: string) => {
+    setRefreshKey((k) => k + 1);
+    if (selectedSession?.id === sessionId) {
+      const session = selectedSession;
+      setActiveDraftId(null);
+      setSelectedSession(null);
+      setSessionKey((k) => k + 1);
+      setSystemPrompt(null);
+      setActiveTopPanel(null);
+      // Back to a fresh composer backed by a draft row, consistent with the
+      // "+" flow, instead of a bare welcome page with no listed session.
+      openWelcomeDraft(session.cwd, workspaceKeyOf(session));
+    }
+  }, [selectedSession, openWelcomeDraft]);
+
+  const handleOpenFile = useCallback((filePath: string, fileName: string, sourceOrOptions?: string | null | { initialDisplayMode?: "diff" }, options?: { initialDisplayMode?: "diff" }) => {
+    const sourceSessionId = typeof sourceOrOptions === "string" || sourceOrOptions === null ? sourceOrOptions : undefined;
+    const openOptions = typeof sourceOrOptions === "object" && sourceOrOptions !== null ? sourceOrOptions : options;
+    const tabId = fileTabId(filePath);
+    setFileTabs((prev) => openFileTab(prev, {
+      fileName,
+      filePath,
+      modeHint: openOptions?.initialDisplayMode,
+      sourceSessionId,
+      tabId,
+    }));
+    setActiveFileTabId(tabId);
+    setRightPanelOpen(true);
+    setRightTabsFocusToken((n) => n + 1);
+    // On mobile the file panel is full-screen; close the drawer so it shows.
+    if (isMobile) setSidebarOpen(false);
+  }, [isMobile]);
+
+  const handleOpenLinkedFile = useCallback((filePath: string, options?: { initialDisplayMode?: "diff" }) => {
+    handleOpenFile(filePath, getFileName(filePath), selectedSession?.id ?? null, options);
+  }, [handleOpenFile, selectedSession?.id]);
+
+  const handleCloseFileTab = useCallback((tabId: string) => {
+    setFileTabs((prev) => {
+      const next = prev.filter((t) => t.id !== tabId);
+      if (next.length === 0) setRightPanelOpen(false);
+      return next;
+    });
+    setActiveFileTabId((cur) => {
+      if (cur !== tabId) return cur;
+      const remaining = fileTabs.filter((t) => t.id !== tabId);
+      return remaining.length > 0 ? remaining[remaining.length - 1].id : null;
+    });
+  }, [fileTabs]);
+
+  // View tabs (changes review, git graph) are workspace singletons: re-opening
+  // activates the existing tab instead of duplicating it.
+  const handleOpenViewTab = useCallback((kind: "changes" | "git-graph", cwd: string) => {
+    setFileTabs((prev) => openViewTab(prev, { kind, cwd }));
+    setActiveFileTabId(kind === "changes" ? changesTabId(cwd) : gitGraphTabId(cwd));
+    setRightPanelOpen(true);
+    setRightTabsFocusToken((n) => n + 1);
+  }, []);
+
+  const sessionTitle = selectedSession
+    ? selectedSession.name || getSessionDisplayFirstMessage(selectedSession.firstMessage).slice(0, 50) || selectedSession.id.slice(0, 12)
+    : null;
+  // Tabs mode with 4+ tabs: the title-bar title moves to the info bar's
+  // center slot so the tab strip keeps the space it needs.
+  const titleMovedToInfoBar = viewMode === "tabs" && tabsState.tabs.length >= 4;
+
+  const handleViewFullHistory = useCallback(() => {
+    if (!selectedSession) return;
+    window.open(
+      `/api/sessions/${encodeURIComponent(selectedSession.id)}/export?inline=1`,
+      "_blank",
+      "noopener,noreferrer",
+    );
+  }, [selectedSession]);
+
+  // Show chat area if a session is selected, or if we have a cwd to start a new session in
+  const effectiveNewSessionCwd = newSessionCwd ?? (selectedSession === null && activeCwd ? activeCwd : null);
+  const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
+  const projectTrustCwd = selectedSession?.cwd ?? effectiveNewSessionCwd;
+  // While restoring initial session from URL, don't show the placeholder
+  const showPlaceholder = initialSessionRestored && !showChat;
+
+  useEffect(() => {
+    setProjectTrust(null);
+    setProjectTrustDialogOpen(false);
+    setProjectTrustError(null);
+    if (!projectTrustCwd) return;
+
+    const controller = new AbortController();
+    fetch(`/api/project-trust?cwd=${encodeURIComponent(projectTrustCwd)}`, { signal: controller.signal })
+      .then(async (response) => {
+        const data = await response.json() as ProjectTrustStatus & { error?: string };
+        if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
+        setProjectTrust(data);
+      })
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        console.error("Failed to load project trust:", error);
+      });
+    return () => controller.abort();
+  }, [projectTrustCwd]);
+
+  const handleTrustProject = useCallback(async () => {
+    if (!projectTrustCwd || projectTrustBusy) return;
+    setProjectTrustBusy(true);
+    setProjectTrustError(null);
+    try {
+      const response = await fetch("/api/project-trust", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd: projectTrustCwd }),
+      });
+      const data = await response.json() as ProjectTrustStatus & { error?: string };
+      if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
+      setProjectTrust(data);
+      setProjectTrustDialogOpen(false);
+      setModelsRefreshKey((key) => key + 1);
+      setSessionKey((key) => key + 1);
+    } catch (error) {
+      setProjectTrustError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setProjectTrustBusy(false);
+    }
+  }, [projectTrustBusy, projectTrustCwd]);
+
+  const activeTab = fileTabs.find((t) => t.id === activeFileTabId) ?? null;
+  const settingsCwd = activeCwd ?? selectedSession?.cwd ?? newSessionCwd;
+  const openSettings = useCallback((tab: SettingsTab) => {
+    setSettingsTab(tab);
+    setSettingsOpen(true);
+  }, []);
+
+  const sidebarContent = (
+    <>
+      <BTLibrary onProject={handleOpenProject} onModels={() => openSettings("models")} />
+      <SessionSidebar
+        selectedSessionId={selectedSession?.id ?? null}
+        selectedDraftId={activeDraftId}
+        onSelectSession={handleSelectSession}
+        onNewSession={handleNewSession}
+        onOpenChangesView={(cwd) => handleOpenViewTab("changes", cwd)}
+        onOpenGitGraph={(cwd) => handleOpenViewTab("git-graph", cwd)}
+        draftSessions={draftSessions}
+        onSelectDraft={handleSelectDraft}
+        onDeleteDraft={handleDeleteDraft}
+        onRenameDraft={handleRenameDraft}
+        initialSessionId={initialSessionId}
+        onInitialRestoreDone={handleInitialRestoreDone}
+        onSessionsLoaded={handleSessionsLoaded}
+        // A brand-new user has no sessions to restore and no workspace to
+        // auto-select — the splash has nothing to wait for, so the sidebar
+        // signals readiness directly and the first-run welcome screen shows.
+        onNoContentToWaitFor={contentDone}
+        onNoWorkspaceChange={handleNoWorkspaceChange}
+        refreshKey={refreshKey}
+        onSessionDeleted={handleSessionDeleted}
+        onSessionRenamed={handleSessionRenamed}
+        onRegenerateTitle={(sessionId) => void generateTitleForSession(sessionId, undefined, "regenerate", true)}
+        titleGeneratingId={titleGeneratingId}
+        selectedCwd={selectedSession?.cwd ?? newSessionCwd ?? null}
+        onCwdChange={handleCwdChange}
+        onOpenFile={handleOpenFile}
+        explorerRefreshKey={explorerRefreshKey}
+        onAtMention={handleAtMention}
+        onAtMentions={handleAtMentions}
+        onRunningSessionIdsChange={handleRunningSessionIdsChange}
+        requestedCwd={cwdRequest}
+        onOpenProject={handleOpenProject}
+        onWorkspaceActivityChange={setWorkspaceActivity}
+        openWorkspaceKeys={openWorkspaceKeys}
+        viewMode={viewMode}
+        workspaceControlsHosts={{
+          // Tabs mode: the title-bar host belongs to the workspace tab bar
+          // (AppShell portals it); the classic selector stays sidebar-driven.
+          title: viewMode === "classic" ? titleWorkspaceControlsHost : null,
+          welcome: welcomeWorkspaceControlsHost,
+        }}
+        // The title-bar workspace selector must be reachable on the first-run
+        // welcome screen too (a brand-new user has no sessions/cwd yet), so it
+        // is shown whenever a project is active OR the welcome placeholder is
+        // on screen. The welcome-page variant still only renders once a chat
+        // session mounts (which requires a cwd).
+        showWorkspaceControls={Boolean(activeCwd ?? selectedSession?.cwd ?? newSessionCwd) || showPlaceholder}
+        onBackgroundTaskDone={handleBackgroundTaskDone}
+      />
+
+    </>
+  );
+
+  return (
+    <>
+    <style>{`
+      @media (max-width: 640px) {
+        .sidebar-overlay-backdrop.sidebar-mobile-pending {
+          opacity: 0 !important;
+          pointer-events: none !important;
+        }
+        .sidebar-container.sidebar-mobile-pending.sidebar-open {
+          transform: translateX(-100%);
+          box-shadow: none;
+        }
+      }
+    `}</style>
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100dvh / var(--app-ui-scale, 1))", overflow: "hidden", background: "var(--bg)" }}>
+      <AppTitleBar
+        topBarRef={topBarRef}
+        sidebarOpen={sidebarOpen}
+        onSidebarToggle={handleSidebarToggle}
+        sidebarToggleDisabled={noWorkspaceEver}
+        isDark={isDark}
+        toggleTheme={toggleTheme}
+        isMobile={isMobile}
+        systemPrompt={systemPrompt}
+        activeTopPanel={activeTopPanel}
+        topPanelPos={topPanelPos}
+        sessionStats={sessionStats}
+        contextUsage={contextUsage}
+        copiedSessionField={copiedSessionField}
+        onCopySessionField={handleCopySessionField}
+        rightPanelOpen={rightPanelOpen}
+        onToggleFilePanel={() => setRightPanelOpen((v) => !v)}
+        onOpenSettings={() => openSettings("models")}
+        sessionTitle={titleMovedToInfoBar ? null : sessionTitle}
+        expandWorkspaceHost={titleMovedToInfoBar}
+        titleGenerating={titleGeneratingId === selectedSession?.id}
+        onWorkspaceControlsHostChange={setTitleWorkspaceControlsHost}
+        showWorkspaceAddButton={viewMode === "tabs"}
+        showPiLogo={viewMode === "tabs"}
+        pickerProjects={workspaceActivity.projects}
+        pickerActivity={workspaceActivity.activity}
+        pickerOpenWorkspaces={openWorkspaceKeys}
+        onSelectProject={handleOpenProject}
+      />
+      {/* Tabs view mode: browser-style workspace tabs in the title-bar host */}
+      {viewMode === "tabs" && titleWorkspaceControlsHost && createPortal(
+        <WorkspaceTabBar
+          tabs={tabsState.tabs}
+          activeKey={tabsState.activeKey}
+          focusToken={workspaceTabFocusToken}
+          activity={workspaceActivity.activity}
+          onSelectTab={handleSelectTab}
+          onCloseTab={handleCloseTab}
+          onReorderTab={tabsApi.reorder}
+        />,
+        titleWorkspaceControlsHost,
+        "workspace-tabs",
+      )}
+      {showChat && projectTrust?.requiresTrust && !projectTrust.trusted && (
+        <button
+          type="button"
+          onClick={() => {
+            setProjectTrustError(null);
+            setProjectTrustDialogOpen(true);
+          }}
+          title={t("desktop.projectResourcesRestricted")}
+          aria-label={t("desktop.projectResourcesRestricted")}
+          style={{
+            position: "fixed",
+            top: isMobile ? 48 : 48,
+            right: isMobile ? 12 : 20,
+            zIndex: 700,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 7,
+            padding: "8px 11px",
+            border: "1px solid color-mix(in srgb, var(--accent-orange) 52%, var(--border))",
+            borderRadius: 7,
+            background: "color-mix(in srgb, var(--accent-orange) 11%, var(--bg-panel))",
+            color: "var(--accent-orange)",
+            boxShadow: "0 8px 24px rgba(0, 0, 0, 0.16)",
+            cursor: "pointer",
+            fontSize: 12,
+            fontWeight: 600,
+          }}
+        >
+          <span aria-hidden="true">⚠</span>
+          {t("desktop.trustProject")}
+        </button>
+      )}
+      <div
+        style={{
+          "--sidebar-width": `${sidebarPanel.width}px`,
+          "--right-panel-width": `${rightPanel.width}px`,
+          flex: 1,
+          display: "flex",
+          overflow: "hidden",
+          minWidth: 0,
+          position: "relative",
+        } as React.CSSProperties}
+      >
+      {/* Full-window wallpaper behind sidebar, chat and right panel — see
+          components/WallpaperLayer.tsx and app/wallpaper.css. First child
+          of the workspace row so every later sibling paints above it, and
+          a sibling of .chat-column for the welcome-page scrim :has(). */}
+      <WallpaperLayer />
+      {/* Mobile overlay backdrop */}
+      <div
+        className={`sidebar-overlay-backdrop${mobileSidebarReady ? "" : " sidebar-mobile-pending"}`}
+        onClick={() => setSidebarOpen(false)}
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 199,
+          background: "rgba(0,0,0,0.4)",
+          opacity: sidebarOpen ? 1 : 0,
+          pointerEvents: sidebarOpen ? "auto" : "none",
+          transition: "opacity 0.25s ease",
+        }}
+      />
+
+      {/* Left sidebar */}
+      <div
+        ref={sidebarPanel.panelRef}
+        className={`sidebar-container${sidebarOpen ? " sidebar-open" : " sidebar-closed"}${mobileSidebarReady ? "" : " sidebar-mobile-pending"}${sidebarPanel.isResizing ? " panel-is-resizing" : ""}`}
+        style={{
+          "--sidebar-width": `${sidebarPanel.width}px`,
+          background: "var(--bg-panel)",
+          display: "flex",
+          flexDirection: "column",
+          flexShrink: 0,
+          zIndex: 200,
+        } as React.CSSProperties}
+      >
+        {sidebarContent}
+      </div>
+      {sidebarOpen && (
+        <div
+          {...sidebarPanel.separatorProps}
+          className="workspace-panel-splitter sidebar-panel-splitter"
+        />
+      )}
+
+      {/* Center: chat */}
+      <div className="chat-column" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
+        {/* Chat content */}
+        <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+          {showChat ? (
+            <ChatWindow
+              key={sessionKey}
+              session={selectedSession}
+              searchTarget={searchTarget?.sessionId === selectedSession?.id ? searchTarget : null}
+              onSearchTargetHandled={handleSearchTargetHandled}
+              sessionRunning={Boolean(selectedSession && runningSessionIds.has(selectedSession.id))}
+              newSessionCwd={effectiveNewSessionCwd}
+              newSessionDraftId={activeDraftId}
+              onAgentEnd={handleAgentEnd}
+              onSessionCreated={handleSessionCreated}
+              onSessionForked={handleSessionForked}
+              modelsRefreshKey={modelsRefreshKey}
+              chatInputRef={chatInputRef}
+              onSystemPromptChange={handleSystemPromptChange}
+              onSessionStatsChange={handleSessionStatsChange}
+              onSessionStatsPanelOpen={openSessionStatsPanel}
+              onContextUsageChange={handleContextUsageChange}
+              onContentReady={contentDone}
+              onOpenFile={handleOpenLinkedFile}
+              onWorkspaceControlsHostChange={setWelcomeWorkspaceControlsHost}
+              onViewFullHistory={handleViewFullHistory}
+              systemPrompt={systemPrompt}
+              sessionTitle={titleMovedToInfoBar ? sessionTitle : null}
+              soundEnabled={soundEnabled}
+              onSoundToggle={onSoundToggle}
+              playDoneSound={playDoneSound}
+              unlockAudio={unlockAudio}
+              notificationsEnabled={notificationsEnabled}
+              onNotificationsToggle={onNotificationsToggle}
+            />
+          ) : showPlaceholder ? (
+            activeCwd ? (
+              <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 15 }}>
+                {t("desktop.selectSessionFromSidebar")}
+              </div>
+            ) : (
+              <WelcomeLobby
+                activity={workspaceActivity.activity}
+                onSelectProject={handleOpenProject}
+                onSelectSession={(s) => handleSelectSession(s)}
+              />
+            )
+          ) : null}
+        </div>
+      </div>
+
+      {/* Right panel: file viewer — always mounted, width animated via CSS */}
+      {rightPanelOpen && (
+        <div
+          {...rightPanel.separatorProps}
+          className="workspace-panel-splitter right-panel-splitter"
+        />
+      )}
+      <div
+        ref={rightPanel.panelRef}
+        className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanel.isResizing ? " panel-is-resizing" : ""}`}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          background: "var(--bg)",
+        }}
+      >
+        {/* Right panel tab bar — nothing to list while the panel is empty,
+            so the strip is dropped and the empty state owns the full panel. */}
+        {fileTabs.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", height: 36 }}>
+            <div style={{ flex: 1, overflow: "hidden" }}>
+              <TabBar
+                tabs={fileTabs}
+                activeTabId={activeFileTabId ?? ""}
+                focusToken={rightTabsFocusToken}
+                onSelectTab={setActiveFileTabId}
+                onCloseTab={handleCloseFileTab}
+              />
+            </div>
+
+          </div>
+        )}
+
+        {/* Tab content — keep-alive: every mounted tab stays in the DOM and is
+            hidden while inactive, so switching never re-fetches or resets it. */}
+        <div
+          role="tabpanel"
+          id="right-panel-content"
+          aria-labelledby={activeTab ? `right-panel-tab-${activeTab.id}` : undefined}
+          className="right-panel-tabpanel"
+          style={{ flex: 1, overflow: "hidden" }}
+        >
+          {fileTabs.length === 0 ? (
+            <RightPanelEmptyState
+              cwd={selectedSession?.cwd ?? activeCwd ?? null}
+              onOpenViewTab={handleOpenViewTab}
+            />
+          ) : (
+            fileTabs.map((tab) => {
+              if (!mountedTabIds.has(tab.id)) return null;
+              const isActive = tab.id === activeFileTabId;
+              const wrapperStyle = { display: isActive ? "block" : "none", height: "100%", overflow: "hidden" } as const;
+              if (isFileTab(tab)) {
+                return (
+                  <div key={tab.id} style={wrapperStyle}>
+                    <FileViewer
+                      key={`${tab.id}:${tab.viewerRevision ?? 0}`}
+                      filePath={tab.filePath}
+                      cwd={activeCwd ?? undefined}
+                      sourceSessionId={tab.sourceSessionId}
+                      initialDisplayMode={tab.initialDisplayMode}
+                      initialState={tab.viewerState}
+                      onAtMention={handleAtMention}
+                      onOpenFile={(filePath) => handleOpenFile(filePath, getFileName(filePath), tab.sourceSessionId)}
+                    />
+                  </div>
+                );
+              }
+              if (tab.kind === "changes") {
+                return (
+                  <div key={tab.id} style={wrapperStyle}>
+                    <ChangesTabView
+                      cwd={tab.cwd}
+                      onOpenFile={(filePath, fileName, options) => handleOpenFile(filePath, fileName, selectedSession?.id ?? null, options)}
+                      onOpenGraph={(graphCwd) => handleOpenViewTab("git-graph", graphCwd)}
+                    />
+                  </div>
+                );
+              }
+              return (
+                <div key={tab.id} style={wrapperStyle}>
+                  <GitGraphTab
+                    cwd={tab.cwd}
+                    onOpenFile={(filePath, fileName) => handleOpenFile(filePath, fileName, selectedSession?.id ?? null)}
+                  />
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>
+    {projectTrustDialogOpen && projectTrustCwd && (
+      <ProjectTrustDialog
+        cwd={projectTrustCwd}
+        busy={projectTrustBusy}
+        error={projectTrustError}
+        onCancelAction={() => {
+          if (!projectTrustBusy) setProjectTrustDialogOpen(false);
+        }}
+        onConfirmAction={() => void handleTrustProject()}
+      />
+    )}
+    {settingsOpen && (
+      <SettingsModal
+        initialTab={settingsTab}
+        cwd={settingsCwd}
+        sessionId={selectedSession?.id ?? null}
+        onCloseAction={() => {
+          setSettingsOpen(false);
+          setModelsRefreshKey((k) => k + 1);
+        }}
+        onModelsSavedAction={() => setModelsRefreshKey((k) => k + 1)}
+        onSessionReloadedAction={() => setSessionKey((k) => k + 1)}
+      />
+    )}
+    </div>
+  </>
+  );
+}

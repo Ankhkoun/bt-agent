@@ -1,0 +1,19 @@
+{
+  "providers": {
+    "my-provider": {
+      "baseUrl": "https://your-provider.example/v1",
+      "api": "openai-completions",
+      "apiKey": "$BT_MODEL_API_KEY",
+      "models": [
+        {
+          "id": "replace-with-provider-model-id",
+          "name": "My personal model",
+          "reasoning": false,
+          "input": ["text"],
+          "contextWindow": 32768,
+          "maxTokens": 4096
+        }
+      ]
+    }
+  }
+}

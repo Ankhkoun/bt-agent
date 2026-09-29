@@ -1,0 +1,30 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { createBTReadTool, extractPdfText } from '../.pi/lib/document-read.ts';
+import { pdfFixture } from './pdf-fixture.mjs';
+
+test('BT read extracts PDF text and keeps native text/image behavior and limits', async t => {
+  const base = resolve('.bt/tests'); await mkdir(base, { recursive: true });
+  const dir = await mkdtemp(join(base, 'pdf-'));
+  t.after(async () => { assert.ok(dir.startsWith(base)); await rm(dir, { recursive: true, force: true }); });
+  const filename = '中文 文件.pdf';
+  await writeFile(join(dir, filename), pdfFixture());
+  await writeFile(join(dir, 'empty.pdf'), pdfFixture(''));
+  await writeFile(join(dir, 'broken.pdf'), 'not a pdf');
+  await writeFile(join(dir, 'code.txt'), 'line 1\nline 2\n');
+  const tool = createBTReadTool(dir);
+  const context = { cwd: dir };
+  const read = args => tool.execute('test', args, undefined, undefined, context);
+  assert.match((await read({ path: filename })).content[0].text, /BT_PDF_FIXTURE/);
+  assert.match((await read({ path: filename })).content[0].text, /第 1 页/);
+  const partial = (await read({ path: filename, offset: 1, limit: 1 })).content[0].text;
+  assert.match(partial, /PDF 文本提取/); assert.doesNotMatch(partial, /BT_PDF_FIXTURE/);
+  assert.match((await read({ path: 'empty.pdf' })).content[0].text, /OCR/);
+  await assert.rejects(read({ path: 'broken.pdf' }));
+  await assert.rejects(read({ path: 'missing.pdf' }));
+  assert.match((await read({ path: 'code.txt', offset: 2, limit: 1 })).content[0].text, /line 2/);
+  const controller = new AbortController(); controller.abort();
+  await assert.rejects(extractPdfText(join(dir, filename), controller.signal));
+});

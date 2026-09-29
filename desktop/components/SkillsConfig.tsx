@@ -1,0 +1,1072 @@
+"use client";
+
+import { useState, useEffect, useCallback, useRef } from "react";
+import { PlusIcon } from "@phosphor-icons/react";
+import { useI18n } from "@/hooks/useI18n";
+import { Toggle } from "@/components/Toggle";
+import { SettingsInput, SettingsButton, SettingsBadge, SegmentedControl, SettingsPane, settingsSidebarFooterStyle, sidebarGroupStyle } from "@/components/settings-ui";
+import type {
+  SkillInfo as Skill,
+  SkillInstallScope,
+  SkillSearchResult,
+  SkillsResponse,
+  SkillUpdateResult,
+} from "@/lib/api-types";
+
+function shortenPath(p: string): string {
+  // Match common home dir patterns: /Users/xxx, /home/xxx
+  return p.replace(/^\/(?:Users|home)\/[^/]+/, "~");
+}
+
+function sourceLabel(skill: Skill): "global" | "project" | "path" {
+  const src = skill.sourceInfo?.source;
+  const scope = skill.sourceInfo?.scope;
+  if (scope === "user" || src === "user") return "global";
+  if (scope === "project" || src === "project") return "project";
+  return "path";
+}
+
+function updateKey(skill: Skill): string | null {
+  return skill.install
+    ? `${skill.install.scope}\0${skill.install.package}`
+    : null;
+}
+
+function shortVersion(version: string | undefined, unknown: string): string {
+  return version ? version.slice(0, 8) : unknown;
+}
+
+
+function SkillDetail({
+  skill,
+  cwd,
+  onToggle,
+  toggling,
+  saveError,
+  updateStatus,
+  checkingUpdate,
+  updating,
+  updateError,
+  onCheckUpdate,
+  onUpdate,
+}: {
+  skill: Skill;
+  cwd: string;
+  onToggle: (skill: Skill) => void;
+  toggling: boolean;
+  saveError: string | null;
+  updateStatus?: SkillUpdateResult;
+  checkingUpdate: boolean;
+  updating: boolean;
+  updateError: string | null;
+  onCheckUpdate: () => void;
+  onUpdate: () => void;
+}) {
+  const { t } = useI18n();
+  const label = sourceLabel(skill);
+  const enabled = !skill.disableModelInvocation;
+  const toggleLabel = enabled
+    ? t("desktop.visibleInModelPrompt")
+    : t("desktop.hiddenFromModelPrompt");
+
+  function displayPath(p: string): string {
+    if (label === "project" && p.startsWith(cwd)) {
+      const rel = p.slice(cwd.length).replace(/^[/\\]/, "");
+      return `./${rel}`;
+    }
+    return shortenPath(p);
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* Path + tag + toggle */}
+      <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+        <SettingsBadge tone={label === "project" ? "project" : "muted"}>
+          {t(`desktop.${label}`)}
+        </SettingsBadge>
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            color: "var(--text-dim)",
+            flex: 1,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {displayPath(skill.filePath)}
+        </span>
+        <Toggle
+          checked={enabled}
+          loading={toggling}
+          onChange={() => onToggle(skill)}
+          label={toggleLabel}
+        />
+        {saveError && (
+          <span style={{ fontSize: 12, color: "var(--status-danger)", flexShrink: 0 }}>
+            {saveError}
+          </span>
+        )}
+      </div>
+
+      {!enabled && (
+        <div style={{ marginTop: -12, color: "var(--text-dim)", fontSize: 12 }}>
+          {t("desktop.hiddenButInvocable")}
+        </div>
+      )}
+
+      {skill.install?.skillsShUrl && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <span
+            style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}
+          >
+            {t("desktop.pluginSource")}
+          </span>
+          <a
+            href={skill.install.skillsShUrl}
+            target="_blank"
+            rel="noreferrer"
+            title={skill.install.skillsShUrl}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              width: "fit-content",
+              maxWidth: "100%",
+              color: "var(--accent)",
+              textDecoration: "none",
+            }}
+          >
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {skill.install.skillsShUrl.replace(/^https?:\/\//, "")} ↗
+            </span>
+          </a>
+        </div>
+      )}
+
+      {skill.install && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+          <span
+            style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}
+          >
+            {t("desktop.version")}
+          </span>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+                color: "var(--text-muted)",
+              }}
+            >
+              {shortVersion(updateStatus?.currentVersion ?? skill.install.versionHash, t("desktop.unknown"))}
+            </span>
+            {skill.install.canCheckForUpdates && (
+              <SettingsButton
+                size="sm"
+                onClick={onCheckUpdate}
+                disabled={checkingUpdate || updating}
+              >
+                {t("desktop.check")}
+              </SettingsButton>
+            )}
+            {updateStatus?.state === "update-available" && (
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 12,
+                  color: "var(--status-warning)",
+                }}
+              >
+                {shortVersion(updateStatus.latestVersion, t("desktop.unknown"))}
+              </span>
+            )}
+            {(checkingUpdate ||
+              (updateStatus && updateStatus.state !== "update-available")) && (
+              <span
+                style={{
+                  fontSize: 12,
+                  color: checkingUpdate
+                    ? "var(--accent)"
+                    : updateStatus?.state === "up-to-date"
+                      ? "var(--status-success)"
+                      : updateStatus?.state === "error"
+                          ? "var(--status-danger)"
+                          : "var(--text-dim)",
+                }}
+              >
+                {checkingUpdate
+                  ? t("desktop.checking")
+                  : updateStatus?.state === "up-to-date"
+                    ? t("desktop.upToDate")
+                    : updateStatus?.state === "unsupported"
+                        ? t("desktop.automaticChecksUnavailable")
+                        : updateStatus?.message || t("desktop.checkFailed")}
+              </span>
+            )}
+            {updateStatus?.state === "update-available" && (
+              <SettingsButton
+                size="sm"
+                variant="primary"
+                onClick={onUpdate}
+                disabled={updating || checkingUpdate}
+              >
+                {updating ? t("desktop.updating") : t("desktop.update")}
+              </SettingsButton>
+            )}
+          </div>
+          {updateError && (
+            <span style={{ fontSize: 12, color: "var(--status-danger)" }}>{updateError}</span>
+          )}
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        <span
+          style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}
+        >
+          {t("desktop.name")}
+        </span>
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 14,
+            color: "var(--text)",
+          }}
+        >
+          {skill.name}
+        </span>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        <span
+          style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}
+        >
+          {t("desktop.description")}
+        </span>
+        <span
+          style={{ fontSize: 14, color: "var(--text-muted)", lineHeight: 1.6 }}
+        >
+          {skill.description}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function AddSkillPanel({
+  cwd,
+  installedPackages,
+  projectResourcesLoaded,
+  onInstalled,
+}: {
+  cwd: string;
+  installedPackages: Record<SkillInstallScope, ReadonlySet<string>>;
+  projectResourcesLoaded: boolean;
+  onInstalled: () => void;
+}) {
+  const { t } = useI18n();
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SkillSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [installing, setInstalling] = useState<string | null>(null);
+  const [installError, setInstallError] = useState<string | null>(null);
+  const [newlyInstalledPkgs, setNewlyInstalledPkgs] = useState<Set<string>>(
+    new Set(),
+  );
+  const [scope, setScope] = useState<"global" | "project">("global");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (!projectResourcesLoaded) setScope("global");
+  }, [projectResourcesLoaded]);
+
+  const search = useCallback(async (q: string) => {
+    if (!q.trim()) return;
+    setSearching(true);
+    setSearchError(null);
+    setResults([]);
+    try {
+      const res = await fetch("/api/skills/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: q.trim() }),
+      });
+      const d = (await res.json()) as {
+        results?: SkillSearchResult[];
+        error?: string;
+      };
+      if (d.error) {
+        setSearchError(d.error);
+        return;
+      }
+      setResults(d.results ?? []);
+      if ((d.results ?? []).length === 0) setSearchError(t("desktop.noSkillsFound"));
+    } catch (e) {
+      setSearchError(String(e));
+    } finally {
+      setSearching(false);
+    }
+  }, [t]);
+
+  const install = useCallback(
+    async (pkg: string) => {
+      setInstalling(pkg);
+      setInstallError(null);
+      try {
+        const res = await fetch("/api/skills/install", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ package: pkg, scope, cwd }),
+        });
+        const d = (await res.json()) as { success?: boolean; error?: string };
+        if (!res.ok || d.error) {
+          setInstallError(d.error ?? `HTTP ${res.status}`);
+          return;
+        }
+        setNewlyInstalledPkgs((prev) =>
+          new Set(prev).add(`${scope}:${pkg}`),
+        );
+        onInstalled();
+      } catch (e) {
+        setInstallError(String(e));
+      } finally {
+        setInstalling(null);
+      }
+    },
+    [onInstalled, scope, cwd],
+  );
+
+  const installPath =
+    scope === "global"
+      ? "~/.pi/agent/skills/"
+      : `${shortenPath(cwd)}/.pi/skills/`;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      {/* ── Header area ── */}
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+          marginBottom: 20,
+        }}
+      >
+        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>
+          {t("desktop.addSkillTitle")}
+        </div>
+
+        {/* Search row */}
+        <div style={{ display: "flex", gap: 8 }}>
+          <SettingsInput
+            inputRef={inputRef}
+            value={query}
+            onChange={setQuery}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") search(query);
+            }}
+            placeholder={t("desktop.skillSearchPlaceholder")}
+            style={{ flex: 1 }}
+          />
+          <SettingsButton
+            variant="primary"
+            onClick={() => search(query)}
+            disabled={searching || !query.trim()}
+            style={{ flexShrink: 0 }}
+          >
+            {searching ? t("desktop.searching") : t("desktop.search")}
+          </SettingsButton>
+        </div>
+
+        {/* Scope + install path row */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <SegmentedControl
+            size="sm"
+            value={scope}
+            onChange={(next) => setScope(next as "global" | "project")}
+            ariaLabel={t("desktop.skillsScope")}
+            options={[
+              {
+                value: "global",
+                label: t("desktop.global"),
+              },
+              {
+                value: "project",
+                label: t("desktop.project"),
+                disabled: !projectResourcesLoaded,
+                title: !projectResourcesLoaded ? t("desktop.projectSkillInstallUnavailable") : undefined,
+              },
+            ]}
+          />
+          <span
+            style={{
+              fontSize: 12,
+              color: "var(--text-dim)",
+              fontFamily: "var(--font-mono)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            → {installPath}
+          </span>
+        </div>
+
+        {/* Errors */}
+        {searchError && (
+          <div style={{ fontSize: 12, color: "var(--status-danger)" }}>{searchError}</div>
+        )}
+        {installError && (
+          <div
+            style={{ fontSize: 12, color: "var(--status-danger)", wordBreak: "break-word" }}
+          >
+            {installError}
+          </div>
+        )}
+      </div>
+
+      {/* ── Results list ── */}
+      {results.length > 0 ? (
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          {results.map((r) => {
+            const isInstalled =
+              installedPackages[scope].has(r.package) ||
+              newlyInstalledPkgs.has(`${scope}:${r.package}`);
+            const isInstalling = installing === r.package;
+            // split "owner/repo@skill" for cleaner display
+            const atIdx = r.package.indexOf("@");
+            const repopart = atIdx > -1 ? r.package.slice(0, atIdx) : r.package;
+            const skillpart = atIdx > -1 ? r.package.slice(atIdx + 1) : null;
+            return (
+              <div
+                key={r.package}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 14,
+                  padding: "12px 0",
+                  borderBottom: "1px solid var(--border)",
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {/* skill name prominent */}
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: "var(--text)",
+                      marginBottom: 3,
+                    }}
+                  >
+                    {skillpart ?? repopart}
+                  </div>
+                  {/* repo + installs + link row */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 11,
+                        color: "var(--text-dim)",
+                      }}
+                    >
+                      {repopart}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        color: "var(--text-muted)",
+                        fontWeight: 500,
+                      }}
+                    >
+                      {r.installs}
+                    </span>
+                    {r.url && (
+                      <a
+                        href={r.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          fontSize: 12,
+                          color: "var(--accent)",
+                          textDecoration: "none",
+                        }}
+                      >
+                        skills.sh ↗
+                      </a>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() =>
+                    !isInstalled && !isInstalling && install(r.package)
+                  }
+                  disabled={isInstalled || isInstalling || installing !== null}
+                  style={{
+                    flexShrink: 0,
+                    padding: "5px 14px",
+                    fontSize: 12,
+                    fontWeight: 500,
+                    borderRadius: 5,
+                    border: "1px solid var(--border)",
+                    cursor:
+                      isInstalled || isInstalling || installing !== null
+                        ? "not-allowed"
+                        : "pointer",
+                    background: isInstalled ? "color-mix(in srgb, var(--status-success) 10%, transparent)" : "none",
+                    color: isInstalled
+                      ? "var(--status-success)"
+                      : isInstalling
+                        ? "var(--accent)"
+                        : "var(--text-muted)",
+                    transition: "color 0.12s",
+                  }}
+                >
+                  {isInstalled
+                    ? `✓ ${t("desktop.installed")}`
+                    : isInstalling
+                      ? t("desktop.installing")
+                      : t("desktop.install")}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        !searchError &&
+        !searching && (
+          <div
+            style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.8 }}
+          >
+            {t("desktop.skillSearchHint").split("skills.sh")[0]}
+            <a
+              href="https://skills.sh"
+              target="_blank"
+              rel="noreferrer"
+              style={{ color: "var(--accent)", textDecoration: "none" }}
+            >
+              skills.sh
+            </a>
+            {t("desktop.skillSearchHint").split("skills.sh")[1]}
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
+export function SkillsConfig({
+  cwd,
+}: {
+  cwd: string;
+}) {
+  const { t } = useI18n();
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [toggling, setToggling] = useState<Set<string>>(new Set());
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [addMode, setAddMode] = useState(false);
+  const [updateStatuses, setUpdateStatuses] = useState<Record<string, SkillUpdateResult>>({});
+  const [checkingUpdates, setCheckingUpdates] = useState<Set<string>>(new Set());
+  const [checkingAll, setCheckingAll] = useState(false);
+  const [updatingSkill, setUpdatingSkill] = useState<string | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [projectResourcesLoaded, setProjectResourcesLoaded] = useState(true);
+
+  const loadSkills = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/skills?cwd=${encodeURIComponent(cwd)}`);
+      const d = (await res.json()) as Partial<SkillsResponse> & { error?: string };
+      if (!res.ok || d.error) throw new Error(d.error ?? `HTTP ${res.status}`);
+      const list = d.skills ?? [];
+      setSkills(list);
+      setProjectResourcesLoaded(d.projectResourcesLoaded ?? true);
+      if (list.length > 0 && !selected) {
+        const initialSkill = list.find((skill) => !skill.disableModelInvocation) ?? list[0];
+        setSelected(initialSkill.filePath);
+      }
+      return list;
+    } catch (e) {
+      setError(String(e));
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  }, [cwd, selected]);
+
+  useEffect(() => {
+    setUpdateStatuses({});
+    setUpdateError(null);
+    void loadSkills();
+  }, [cwd]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const checkForUpdates = useCallback(async (skill?: Skill) => {
+    const targets = skill
+      ? [skill]
+      : skills.filter((item) => Boolean(item.install));
+    const keys = targets
+      .map(updateKey)
+      .filter((key): key is string => Boolean(key));
+    if (keys.length === 0) return;
+
+    setUpdateError(null);
+    setCheckingUpdates((current) => new Set([...current, ...keys]));
+    if (!skill) setCheckingAll(true);
+    try {
+      const res = await fetch("/api/skills/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cwd,
+          package: skill?.install?.package,
+          scope: skill?.install?.scope,
+        }),
+      });
+      const data = (await res.json()) as {
+        updates?: SkillUpdateResult[];
+        error?: string;
+      };
+      if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setUpdateStatuses((current) => {
+        const next = { ...current };
+        for (const update of data.updates ?? []) {
+          next[`${update.scope}\0${update.package}`] = update;
+        }
+        return next;
+      });
+    } catch (e) {
+      setUpdateError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCheckingUpdates((current) => {
+        const next = new Set(current);
+        for (const key of keys) next.delete(key);
+        return next;
+      });
+      if (!skill) setCheckingAll(false);
+    }
+  }, [cwd, skills]);
+
+  const updateInstalledSkill = useCallback(async (skill: Skill) => {
+    if (!skill.install) return;
+    const key = updateKey(skill)!;
+    setUpdatingSkill(key);
+    setUpdateError(null);
+    try {
+      const res = await fetch("/api/skills/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cwd,
+          package: skill.install.package,
+          scope: skill.install.scope,
+        }),
+      });
+      const data = (await res.json()) as {
+        success?: boolean;
+        skill?: Skill;
+        error?: string;
+      };
+      if (!res.ok || data.error || !data.success) {
+        throw new Error(data.error ?? `HTTP ${res.status}`);
+      }
+      await loadSkills();
+      const versionHash = data.skill?.install?.versionHash;
+      setUpdateStatuses((current) => ({
+        ...current,
+        [key]: {
+          package: skill.install!.package,
+          scope: skill.install!.scope,
+          state: "up-to-date",
+          currentVersion: versionHash,
+          latestVersion: versionHash,
+        },
+      }));
+    } catch (e) {
+      setUpdateError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setUpdatingSkill(null);
+    }
+  }, [cwd, loadSkills]);
+
+  const toggle = useCallback(async (skill: Skill) => {
+    const next = !skill.disableModelInvocation;
+    setToggling((s) => new Set(s).add(skill.filePath));
+    setSaveError(null);
+    try {
+      const res = await fetch("/api/skills", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cwd,
+          filePath: skill.filePath,
+          disableModelInvocation: next,
+        }),
+      });
+      const d = (await res.json()) as { success?: boolean; error?: string };
+      if (!res.ok || d.error) {
+        setSaveError(d.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      setSkills((prev) =>
+        prev.map((s) =>
+          s.filePath === skill.filePath
+            ? { ...s, disableModelInvocation: next }
+            : s,
+        ),
+      );
+    } catch (e) {
+      setSaveError(String(e));
+    } finally {
+      setToggling((s) => {
+        const n = new Set(s);
+        n.delete(skill.filePath);
+        return n;
+      });
+    }
+  }, [cwd]);
+
+  const selectedSkill = skills.find((s) => s.filePath === selected) ?? null;
+  const updateAvailableCount = Object.values(updateStatuses).filter(
+    (status) => status.state === "update-available",
+  ).length;
+  const hasInstalledSkills = skills.some((skill) => Boolean(skill.install));
+
+  return (
+    <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
+        {!projectResourcesLoaded && (
+          <div
+            role="status"
+            style={{
+              padding: "8px 18px",
+              borderBottom: "1px solid var(--border)",
+              background: "var(--bg-subtle)",
+              color: "var(--text-muted)",
+              fontSize: 12,
+            }}
+          >
+            {t("desktop.projectSkillsRestricted")}
+          </div>
+        )}
+
+        <SettingsPane
+          sidebar={
+            <div style={{ display: "flex", flexDirection: "column", minHeight: 0, height: "100%" }}>
+              <div style={{ flex: 1, overflowY: "auto", padding: "8px 6px" }}>
+              {loading ? (
+                <div
+                  style={{
+                    padding: "10px 8px",
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  {t("desktop.loading")}
+                </div>
+              ) : error ? (
+                <div
+                  style={{
+                    padding: "10px 8px",
+                    fontSize: 11,
+                    color: "var(--status-danger)",
+                  }}
+                >
+                  {error}
+                </div>
+              ) : skills.length === 0 ? (
+                <div
+                  style={{
+                    padding: "10px 8px",
+                    fontSize: 11,
+                    color: "var(--text-dim)",
+                  }}
+                >
+                  {t("desktop.noSkillsFound")}
+                </div>
+              ) : (
+                (() => {
+                  const groups: { key: string; label: string; skills: typeof skills }[] = [];
+                  const groupDefinitions = [
+                    {
+                      key: "project / skills.sh",
+                      label: `${t("desktop.project")} / skills.sh`,
+                      matches: (skill: Skill) =>
+                        sourceLabel(skill) === "project" &&
+                        Boolean(skill.install?.skillsShUrl),
+                    },
+                    {
+                      key: "project",
+                      label: t("desktop.project"),
+                      matches: (skill: Skill) =>
+                        sourceLabel(skill) === "project" &&
+                        !skill.install?.skillsShUrl,
+                    },
+                    {
+                      key: "global / skills.sh",
+                      label: `${t("desktop.global")} / skills.sh`,
+                      matches: (skill: Skill) =>
+                        sourceLabel(skill) === "global" &&
+                        Boolean(skill.install?.skillsShUrl),
+                    },
+                    {
+                      key: "global",
+                      label: t("desktop.global"),
+                      matches: (skill: Skill) =>
+                        sourceLabel(skill) === "global" &&
+                        !skill.install?.skillsShUrl,
+                    },
+                    {
+                      key: "path",
+                      label: t("desktop.path"),
+                      matches: (skill: Skill) => sourceLabel(skill) === "path",
+                    },
+                  ];
+                  for (const { key, label, matches } of groupDefinitions) {
+                    const grpSkills = skills.filter(matches);
+                    if (grpSkills.length > 0)
+                      groups.push({ key, label, skills: grpSkills });
+                  }
+                  return groups.map(
+                    ({ key: groupKey, label: grpLabel, skills: grpSkills }) => {
+                      return (
+                      <div key={groupKey} style={{ marginBottom: 6 }}>
+                        <div
+                          style={sidebarGroupStyle}
+                        >
+                          {grpLabel}
+                        </div>
+                        {grpSkills.map((skill) => {
+                          const isSelected =
+                            !addMode && selected === skill.filePath;
+                          const disabled = skill.disableModelInvocation;
+                          return (
+                            <div
+                              key={skill.filePath}
+                              onClick={() => {
+                                setSelected(skill.filePath);
+                                setAddMode(false);
+                              }}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 7,
+                                padding: "8px 8px",
+                                borderRadius: 5,
+                                cursor: "pointer",
+                                background: isSelected
+                                  ? "var(--bg-selected)"
+                                  : "none",
+                              }}
+                              onMouseEnter={(e) => {
+                                if (!isSelected)
+                                  e.currentTarget.style.background =
+                                    "var(--bg-hover)";
+                              }}
+                              onMouseLeave={(e) => {
+                                if (!isSelected)
+                                  e.currentTarget.style.background = "none";
+                              }}
+                            >
+                              <span
+                                style={{
+                                  flexShrink: 0,
+                                  width: 7,
+                                  height: 7,
+                                  borderRadius: "50%",
+                                  background: disabled
+                                    ? "var(--border)"
+                                    : "var(--accent)",
+                                  transition: "background 0.15s",
+                                }}
+                              />
+                              <span
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: isSelected ? 600 : 400,
+                                  color: disabled
+                                    ? "var(--text-dim)"
+                                    : "var(--text)",
+                                  fontFamily: "var(--font-mono)",
+                                  flex: 1,
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {skill.name}
+                              </span>
+                              {(() => {
+                                const key = updateKey(skill);
+                                const status = key ? updateStatuses[key] : undefined;
+                                if (status?.state !== "update-available") return null;
+                                return (
+                                  <span
+                                    title={t("desktop.updateAvailable")}
+                                    style={{
+                                      color: "var(--status-warning)",
+                                      fontSize: 13,
+                                      lineHeight: 1,
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    ↑
+                                  </span>
+                                );
+                              })()}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      );
+                    },
+                  );
+                })()
+              )}
+            </div>
+            {/* Add skill button */}
+            <div style={settingsSidebarFooterStyle}>
+              <div
+                onClick={() => setAddMode(true)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "7px 8px",
+                  borderRadius: 5,
+                  cursor: "pointer",
+                  background: addMode ? "var(--bg-selected)" : "none",
+                  color: addMode ? "var(--accent)" : "var(--text-dim)",
+                  fontSize: 12,
+                }}
+                onMouseEnter={(e) => {
+                  if (!addMode)
+                    e.currentTarget.style.background = "var(--bg-hover)";
+                }}
+                onMouseLeave={(e) => {
+                  if (!addMode) e.currentTarget.style.background = "none";
+                }}
+              >
+                <PlusIcon size={13} />
+                {t("desktop.addSkill")}
+              </div>
+            </div>
+          </div>
+        }
+        footer={
+          hasInstalledSkills || updateAvailableCount > 0 ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 18px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {hasInstalledSkills && (
+                <SettingsButton
+                  onClick={() => void checkForUpdates()}
+                  disabled={checkingAll || updatingSkill !== null}
+                >
+                  {checkingAll ? t("desktop.checking") : t("desktop.checkUpdates")}
+                </SettingsButton>
+              )}
+              {updateAvailableCount > 0 && (
+                <span style={{ fontSize: 12, color: "var(--status-warning)" }}>
+                  {t("desktop.updatesCount")
+                    .replace("{count}", String(updateAvailableCount))
+                    .replace("{suffix}", updateAvailableCount === 1 ? "" : "s")}
+                </span>
+              )}
+            </div>
+          </div>
+          ) : undefined
+        }
+      >
+        <div style={{ padding: 20, minHeight: "100%", boxSizing: "border-box" }}>
+            {addMode ? (
+              <AddSkillPanel
+                cwd={cwd}
+                installedPackages={{
+                  global: new Set(
+                    skills
+                      .filter((skill) => skill.install?.scope === "global")
+                      .map((skill) => skill.install!.package),
+                  ),
+                  project: new Set(
+                    skills
+                      .filter((skill) => skill.install?.scope === "project")
+                      .map((skill) => skill.install!.package),
+                  ),
+                }}
+                projectResourcesLoaded={projectResourcesLoaded}
+                onInstalled={() => {
+                  void loadSkills();
+                }}
+              />
+            ) : loading ? null : selectedSkill ? (
+              <SkillDetail
+                key={selectedSkill.filePath}
+                skill={selectedSkill}
+                cwd={cwd}
+                onToggle={toggle}
+                toggling={toggling.has(selectedSkill.filePath)}
+                saveError={saveError}
+                updateStatus={
+                  updateKey(selectedSkill)
+                    ? updateStatuses[updateKey(selectedSkill)!]
+                    : undefined
+                }
+                checkingUpdate={
+                  updateKey(selectedSkill)
+                    ? checkingUpdates.has(updateKey(selectedSkill)!)
+                    : false
+                }
+                updating={updatingSkill === updateKey(selectedSkill)}
+                updateError={updateError}
+                onCheckUpdate={() => void checkForUpdates(selectedSkill)}
+                onUpdate={() => void updateInstalledSkill(selectedSkill)}
+              />
+            ) : (
+              <div
+                style={{
+                  height: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "var(--text-dim)",
+                  fontSize: 13,
+                }}
+              >
+                {t("desktop.selectSkill")}
+              </div>
+            )}
+          </div>
+        </SettingsPane>
+      </div>
+  );
+}

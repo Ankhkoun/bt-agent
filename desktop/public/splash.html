@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src http://127.0.0.1:30142" />
+<title>BT-Agent</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #1a1a1a;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .splash { display: flex; flex-direction: column; align-items: center; gap: 26px; }
+  .logo {
+    width: 88px; height: 88px; color: #ffffff;
+    animation: breathe 1.7s ease-in-out infinite;
+  }
+  .logo svg { width: 100%; height: 100%; display: block; }
+  @keyframes breathe {
+    0%, 100% { opacity: 0.95; transform: scale(1); }
+    50% { opacity: 0.55; transform: scale(0.96); }
+  }
+</style>
+</head>
+<body>
+  <div class="splash">
+    <div class="logo" aria-hidden="true">
+      <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><rect width="256" height="256" rx="58" fill="#162524"/><rect x="10" y="10" width="236" height="236" rx="50" fill="none" stroke="#a6cfbf" stroke-width="3"/><path d="M53 70h44c31 0 42 32 24 49 25 17 13 57-21 57H53V70zm23 21v20h20c15 0 15-20 0-20H76zm0 40v24h23c17 0 17-24 0-24H76zm62-61h72v23h-24v83h-24V93h-24V70z" fill="#c8e6d7"/></svg>
+
+
+    </div>
+  </div>
+</body>
+</html>
