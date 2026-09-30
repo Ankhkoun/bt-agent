@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { createBTReadTool } from "../lib/document-read.ts";
 import { registerBTBrowser } from "../lib/browser-extension.ts";
+import { registerBTMemory } from "../lib/memory-extension.ts";
 
 export const MODES = [
   { id: "general", label: "General", command: "general" },
@@ -41,6 +42,7 @@ export default function btExtension(pi: ExtensionAPI) {
   pi.registerTool(createBTReadTool(ROOT));
   registerBTBrowser(pi, ROOT);
   let mode: Mode = "general";
+  registerBTMemory(pi, ROOT, () => mode);
 
   function showMode(ctx: ExtensionContext) {
     if (!ctx.hasUI) return;

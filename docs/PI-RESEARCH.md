@@ -4,6 +4,12 @@ GUI 追加阶段见 [GUI-RESEARCH.md](GUI-RESEARCH.md)：采用社区 Pi Web Des
 
 核验日期：2026-09-16。先阅读官方仓库/文档，再实现；安装后同时核对发布包文档、`.d.ts` 和实际行为。
 
+## 可审阅长期记忆与学习证据（2026-09-30）
+
+针对原先仅靠提示词约束 `read/edit/write` 的记忆更新，增加 `bt_memory_propose` 与用户 `/memory-review` 命令。已核对固定 Pi 0.85.1 的 `extensions/types.d.ts`、`session-manager.d.ts`：通过公开 `registerTool`、`registerCommand`、`tool_call` 阻止返回值及 `getBranch/getSessionId` 获取实际来源，不修改 Pi 核心。模型只能提出候选，审批仅由桌面 API 或用户命令执行。
+
+Node-only 共享存储位于 `desktop/lib/bt-memory.ts`，Extension 和 Next 复用同一实现；CLI 运行需要该文件，不依赖 GUI 服务运行。学习评估按 AI解释保存，并要求回答原文、缺口、下一验证问题。文件是追加式记录，既有个人 Memory 不做迁移和重写。详细事务机制、跨进程锁、失败恢复和能力边界见 [MEMORY-REVIEW.md](MEMORY-REVIEW.md)。
+
 ## 本地计划本（用户追加需求）
 
 桌面侧栏新增「日历 · 计划本」，提供周计划、月历、长期目标、完成日志和多维总表。数据独立保存在 `.bt/planner.json`，通过同源 `/api/bt/planner` 读写；使用既有原子文件替换与 revision 冲突检查（单桌面服务进程），不改 Pi SDK、不新增依赖。字段包含事项类型、状态、优先级、项目、计划日期、实际完成日期、目标关联、笔记、更新时间和执行步骤。

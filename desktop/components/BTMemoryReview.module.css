@@ -1,0 +1,15 @@
+.panel { padding: 16px 24px; overflow-y: auto; min-height: 180px; }
+.panel > p { color: var(--text-muted); line-height: 1.6; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+.actions button { border: 1px solid var(--border); padding: 6px 12px; border-radius: 8px; cursor: pointer; }
+.actions button[aria-pressed="true"] { background: var(--bg-hover); font-weight: 600; }
+.actions button:disabled { opacity: .5; cursor: wait; }
+.card { border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin: 12px 0; }
+.card header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+.card header span, .card small { color: var(--text-muted); }
+.card p, .card dd { line-height: 1.6; overflow-wrap: anywhere; }
+.card dt { font-weight: 600; margin-top: 8px; }
+.card dd { margin: 4px 0; white-space: pre-wrap; }
+.card blockquote { border-left: 3px solid var(--border); padding-left: 12px; margin: 12px 0; }
+.card summary { cursor: pointer; margin: 12px 0; }
+.text { white-space: pre-wrap; overflow-wrap: anywhere; }

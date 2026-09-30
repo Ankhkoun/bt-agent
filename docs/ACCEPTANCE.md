@@ -2,7 +2,7 @@
 
 ## 验收口径
 
-- 自动化验收使用隔离 Fixture、临时 Agent 目录和本地模型服务，不读取个人 Memory，不输出认证资料。
+- 回归测试使用隔离 Fixture、临时 Agent 目录和本地模型服务，不读取个人 Memory，不输出认证资料。`acceptance --live` 使用正在运行的实例，遵循其 Memory 设置，可能将当前自动载入记忆发送给所选服务商；临时工作目录不隔离共享 Memory。
 - `npm run acceptance` 检查正在运行的桌面实例、BT 项目、七份 Memory、Session 列表、运行状态和模型列表。
 - `npm run acceptance -- --live` 才会发送一次真实模型请求；必须同时设置 `BT_ACCEPTANCE_CONFIRM=1`，避免在 CI 或普通检查中产生模型费用。
 - 默认使用 `/api/models` 返回的默认模型；若日常使用的是其他已确认模型，可设置 `BT_ACCEPTANCE_PROVIDER` 和 `BT_ACCEPTANCE_MODEL` 覆盖本次验收，不会输出 API Key。

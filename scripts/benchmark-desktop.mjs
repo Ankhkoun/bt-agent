@@ -15,6 +15,8 @@ const fixture = await mkdtemp(join(fixtures, 'performance-'));
 let child, browser;
 try {
   await cp(join(root, '.pi'), join(fixture, '.pi'), { recursive: true });
+  await mkdir(join(fixture, 'desktop/lib'), { recursive: true });
+  await cp(join(root, 'desktop/lib/bt-memory.ts'), join(fixture, 'desktop/lib/bt-memory.ts'));
   await cp(join(root, 'templates', 'memory'), join(fixture, 'memory'), { recursive: true });
   const agentDir = join(fixture, 'agent');
   await mkdir(agentDir);

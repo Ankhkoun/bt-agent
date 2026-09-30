@@ -95,9 +95,14 @@ test('Pi 0.85.1 runtime: five modes, UI, memory, tools and sessions', { timeout:
       const payload = JSON.parse(body);
       requests.push(payload);
       const userText = JSON.stringify(payload.messages.findLast((m) => m.role === 'user')?.content);
-      const wantTool = userText?.includes('FIXTURE_WRITE') && payload.messages.at(-1)?.role !== 'tool';
+      const memory = userText.includes('FIXTURE_MEMORY');
+      const fakeEvidence = userText.includes('FIXTURE_FAKE_EVIDENCE');
+      const directWrite = userText.includes('FIXTURE_DIRECT_MEMORY');
+      const wantTool = (memory || fakeEvidence || directWrite || userText?.includes('FIXTURE_WRITE')) && payload.messages.at(-1)?.role !== 'tool';
       const delta = wantTool
-        ? { role: 'assistant', tool_calls: [{ index: 0, id: 'fixture-write', type: 'function', function: { name: 'write', arguments: JSON.stringify({ path: join(fixture, 'scratch.txt'), content: 'local tool verified' }) } }] }
+        ? { role: 'assistant', tool_calls: [{ index: 0, id: 'fixture-write', type: 'function', function: (memory || fakeEvidence)
+          ? { name: 'bt_memory_propose', arguments: JSON.stringify({ target: 'profile', kind: 'user_view', text: '用户希望学习大模型应用开发。', reason: '作为后续辅导方向', evidence: [{ role: 'user', quote: fakeEvidence ? '这句话不存在于对话中' : '我希望学习大模型应用开发' }] }) }
+          : { name: 'write', arguments: JSON.stringify({ path: join(fixture, directWrite ? 'memory/profile.md' : 'scratch.txt'), content: 'local tool verified' }) } }] }
         : { role: 'assistant', content: 'Local fixture response. No external model was called.' };
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });
       const chunk = (d, finish) => ({ id: 'fixture', object: 'chat.completion.chunk', created: 1, model: 'fixture', choices: [{ index: 0, delta: d, finish_reason: finish }] });
@@ -117,6 +122,8 @@ test('Pi 0.85.1 runtime: five modes, UI, memory, tools and sessions', { timeout:
     await rm(fixture, { recursive: true, force: true });
   });
   await cp(join(root, '.pi'), join(fixture, '.pi'), { recursive: true });
+  await mkdir(join(fixture, 'desktop/lib'), { recursive: true });
+  await cp(join(root, 'desktop/lib/bt-memory.ts'), join(fixture, 'desktop/lib/bt-memory.ts'));
   await cp(join(root, 'templates/memory'), join(fixture, 'memory'), { recursive: true });
   await writeFile(join(fixture, 'memory/profile.md'), '# Fixture profile\nuser-fixture-marker\n');
   await mkdir(agentDir, { recursive: true });
@@ -176,6 +183,35 @@ test('Pi 0.85.1 runtime: five modes, UI, memory, tools and sessions', { timeout:
     assert.match(rpc.status(), /Tutor/);
     await rpc.request('prompt', { message: '/mode bt' });
     assert.equal(rpc.status(), 'BT · BT');
+  });
+
+  await t.test('source-backed memory is pending until explicit review; fabricated evidence and direct writes fail', async () => {
+    const { readMemoryReview } = await import('../desktop/lib/bt-memory.ts');
+    const original = await readFile(join(fixture, 'memory/profile.md'), 'utf8');
+    await rpc.prompt('FIXTURE_MEMORY 我希望学习大模型应用开发');
+    const state = readMemoryReview(fixture);
+    assert.equal(state.proposals.length, 1);
+    const p = state.proposals[0];
+    assert.equal(p.status, 'pending');
+    const { messages } = await rpc.request('get_messages');
+    assert.ok(messages.some(m => m.role === 'toolResult' && m.toolName === 'bt_memory_propose' && !m.isError));
+    const file = (await rpc.request('get_state')).sessionFile;
+    const entries = (await readFile(file, 'utf8')).trim().split('\n').map(JSON.parse);
+    assert.ok(entries.some(e => e.id === p.source.evidence[0].entryId && e.message?.role === 'user'));
+    assert.equal(await readFile(join(fixture, 'memory/profile.md'), 'utf8'), original);
+    await rpc.prompt('FIXTURE_FAKE_EVIDENCE');
+    assert.equal(readMemoryReview(fixture).proposals.length, 1);
+    assert.ok((await rpc.request('get_messages')).messages.some(m => m.role === 'toolResult' && m.toolName === 'bt_memory_propose' && m.isError));
+    await rpc.prompt('FIXTURE_DIRECT_MEMORY');
+    assert.equal(await readFile(join(fixture, 'memory/profile.md'), 'utf8'), original);
+    const count = requests.length;
+    await rpc.request('prompt', { message: `/memory-review accept ${p.id}` });
+    assert.equal(requests.length, count);
+    assert.equal(readMemoryReview(fixture).proposals[0].status, 'accepted');
+    await rpc.prompt('load reviewed memory');
+    assert.match(requests.at(-1).messages[0].content, /用户希望学习大模型应用开发/);
+    await rpc.request('prompt', { message: `/memory-review undo ${p.id}` });
+    assert.equal(await readFile(join(fixture, 'memory/profile.md'), 'utf8'), original);
   });
 
   await t.test('memory reload, missing file, length limit and native write tool', async () => {

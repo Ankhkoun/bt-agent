@@ -5,6 +5,7 @@ import { BookOpenText, FolderSimplePlus, GearSix, X, ArrowSquareOut } from "@pho
 import { BTNotebooks } from "./BTNotebooks";
 import { BTPlanner } from "./BTPlanner";
 import { MarkdownBody } from "./MarkdownBody";
+import { BTMemoryReview } from "./BTMemoryReview";
 
 const labels: Record<string, string> = { profile: "关于我", goals: "目标", tasks: "当前任务", projects: "项目记录", knowledge_map: "知识地图", learning_log: "学习日志", bt_memory: "共同记忆" };
 type Settings = { defaultMode: string; memoryEnabled: boolean; memoryLimit: number; memoryTotalLimit: number; persona: string };
@@ -28,7 +29,7 @@ export function BTLibrary({ onProject, onModels }: { onProject: (path: string) =
   };
   useEffect(() => { void refresh().catch(e => setMessage(String(e))); }, []);
   useEffect(() => {
-    if (panel !== "memory") return;
+    if (panel !== "memory" || memory === "review") return;
     const controller = new AbortController(); setText(""); setMessage("");
     void fetch(`/api/bt?memory=${memory}`, { signal: controller.signal }).then(async response => {
       const result = await response.json(); if (!response.ok) throw new Error(result.error); setText(result.content);
@@ -74,7 +75,7 @@ export function BTLibrary({ onProject, onModels }: { onProject: (path: string) =
       <header><div><small>BT · PERSONAL SPACE</small><h2>{panel === "notebooks" ? "随手记下，留待回看" : panel === "planner" ? "日历、计划与做过的事" : panel === "memory" ? "记忆，让故事继续" : panel === "settings" ? "你的 BT" : "添加一个项目"}</h2></div><button onClick={() => setPanel(null)} aria-label="关闭"><X size={22}/></button></header>
       {panel === "notebooks" && <BTNotebooks />}
       {panel === "planner" && <BTPlanner />}
-      {panel === "memory" && <><nav className="bt-memory-tabs">{Object.entries(labels).map(([id, label]) => <button key={id} aria-pressed={id === memory} onClick={() => setMemory(id)}>{label}</button>)}</nav><div className="bt-memory-content"><MarkdownBody>{text || message || "正在读取记忆…"}</MarkdownBody></div><footer>所有项目与模式共享这份 Memory。需要更新时，告诉 BT「记住…」，或使用 /remember。</footer></>}
+      {panel === "memory" && <><nav className="bt-memory-tabs">{Object.entries(labels).map(([id, label]) => <button key={id} aria-pressed={id === memory} onClick={() => setMemory(id)}>{label}</button>)}<button aria-pressed={memory === "review"} onClick={() => setMemory("review")}>候选与历史</button></nav>{memory === "review" ? <BTMemoryReview /> : <div className="bt-memory-content"><MarkdownBody>{text || message || "正在读取记忆…"}</MarkdownBody></div>}<footer>所有项目与模式共享 Memory。告诉 BT「记住…」或使用 /remember 提出候选，在「候选与历史」确认保存。</footer></>}
       {panel === "settings" && settings && <div className="bt-form">
         <button className="bt-primary" onClick={() => { setPanel(null); onModels(); }}>配置模型服务商 / API Key / 模型</button>
         <label>新对话默认模式<select value={settings.defaultMode} onChange={e => setSettings({ ...settings, defaultMode: e.target.value })}>{["general", "tutor", "interviewer", "planner", "bt"].map(id => <option key={id} value={id}>{id === "bt" ? "BT" : id[0].toUpperCase() + id.slice(1)}</option>)}</select></label>

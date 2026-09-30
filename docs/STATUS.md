@@ -1,6 +1,8 @@
 # BT-Agent 状态
 
-更新：2026-09-29。
+更新：2026-09-30。
+
+新增可审阅长期记忆与学习证据：`bt_memory_propose` 在当前 Session 分支匹配原文，候选确认前不写 Markdown；Memory 页面与 `/memory-review` 支持用户确认、拒绝、撤销。知识地图须提供知识点、建议等级、回答依据、缺口和下一验证问题，保留 AI评估/待验证标签。共享存储采用独占锁、revision/文件哈希校验、原子替换和事务恢复。根 19 项、桌面 9 项、浏览器 2 项与隔离 Edge 审阅 UI 测试通过，类型检查/lint/生产构建通过；无真实模型质量评测，个人 Memory 未修改。设计见 [MEMORY-REVIEW.md](MEMORY-REVIEW.md)，履历与贡献边界见 [RESUME-PROJECT.md](RESUME-PROJECT.md)。运行中的用户桌面未自动重启，需重新启动以加载新构建。
 
 工程化回归补充（2026-09-29）：`npm run verify` 已通过根检查、集成 9 项、桌面检查/lint/生产构建、桌面 8 项和浏览器 2 项；运行中的桌面实例只读健康验收通过（4 个项目、7 个会话、8 个模型条目）。真实模型自动验收使用默认模型收到 HTTP 403，不能据此声称认证或生成成功；详见 [ACCEPTANCE.md](ACCEPTANCE.md)。
 
@@ -27,4 +29,4 @@ GUI 升级已实现：`desktop/` 复用 MIT Pi Web Desktop，Electron 独立窗�
 参考依据：PI-RESEARCH.md。未来需求：根 ROADMAP.md。
 GUI 依据：GUI-RESEARCH.md。桌面为当前目录运行版，尚无独立分发安装包；暂不运行上游 release/build-release 脚本。
 
-本目录已初始化本地 Git main 分支，未创建提交或远程仓库。
+Git 基线：`04fab1f` 为首版快照，工程验证提交为 `42e34d1`；远程仓库与工程验证 PR 已创建。本轮功能位于 `feat/reviewable-memory`，提交状态以 Git 为准。
