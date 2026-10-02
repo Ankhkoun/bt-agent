@@ -6,9 +6,11 @@
 
 新增 Tutor Workflow 执行器：诊断与教学后暂停等待用户复述，再暂停等待变式回答；回答以用户 Evidence 保存，助手反馈和最终学习记录生成 Artifact，规则评估完成后提出带 L2 AI 评估标记的知识地图 Memory Candidate。Tutor Session 的 sessionId、sessionFile 和工作目录写入事件日志，应用重启后可通过任务中心继续提交回答；没有回答时不会把任务标记为完成。
 
-当前边界：Research 和 Tutor 已有自动执行器；Interviewer/Planner/Build/Document 等已有结构化 Profile，但仍需继续接入各自执行器。Tutor 的学习效果、模型质量和跨进程恢复已通过隔离 Fixture 验证，真实模型质量和真人学习效果仍未形成独立指标。Office 解析、重复日程/提醒、Windows Task Scheduler、ICS/CalDAV/Google/Microsoft 同步和独立安装发布仍未完成。
+新增 Document Workflow 执行器：从任务范围读取本地 Markdown、文本或 PDF，保存行号/页码 Evidence，生成文档处理 Artifact 并运行规则 Evaluation；超过 2000 个文本块会明确标记截断，DOCX/XLSX/PPTX 解析器未接入时直接失败并保留原因。
 
-验证记录：根集成与 Memory 测试 19 项、桌面测试 18 项、浏览器测试 2 项通过；`desktop` TypeScript、ESLint、生产构建通过。真实模型质量、外部同步可靠性和生活规划效果未通过独立真人验收，不作生产指标声明。
+当前边界：Research、Tutor 和 Document 已有自动执行器；Interviewer/Planner/Build 等已有结构化 Profile，但仍需继续接入各自执行器。Tutor 的学习效果、模型质量和跨进程恢复已通过隔离 Fixture 验证，真实模型质量和真人学习效果仍未形成独立指标。Office 解析、重复日程/提醒、Windows Task Scheduler、ICS/CalDAV/Google/Microsoft 同步和独立安装发布仍未完成。
+
+验证记录：根集成与 Memory 测试 19 项、桌面测试 20 项、浏览器测试 2 项通过；`desktop` TypeScript、ESLint、生产构建通过。真实模型质量、外部同步可靠性和生活规划效果未通过独立真人验收，不作生产指标声明。
 
 更新：2026-09-30。
 
