@@ -6,7 +6,7 @@
 
 新增 Tutor Workflow 执行器：诊断与教学后暂停等待用户复述，再暂停等待变式回答；回答以用户 Evidence 保存，助手反馈和最终学习记录生成 Artifact，规则评估完成后提出带 L2 AI 评估标记的知识地图 Memory Candidate。Tutor Session 的 sessionId、sessionFile 和工作目录写入事件日志，应用重启后可通过任务中心继续提交回答；没有回答时不会把任务标记为完成。
 
-新增 Document Workflow 执行器：从任务范围读取本地 Markdown、文本、DOCX 或 PDF，保存行号/段落/页码 Evidence，生成文档处理 Artifact 并运行规则 Evaluation；超过 2000 个文本块会明确标记截断，XLSX/PPTX 解析器未接入时直接失败并保留原因。
+新增 Document Workflow 执行器：从任务范围读取本地 Markdown、文本、DOCX、XLSX、PPTX 或 PDF，保存行号/段落/工作表单元格/幻灯片/页码 Evidence，生成文档处理 Artifact 并运行规则 Evaluation；超过 2000 个文本块会明确标记截断，未知格式会直接失败并保留原因。
 
 新增 Planner Workflow 执行器：完成目标和约束步骤后生成计划候选 Artifact，使用单次 L1 Approval 等待用户采纳；批准后才写入现有 `.bt/planner.json`，并记录正式事项的日期、优先级、项目和 Evaluation。
 
@@ -24,7 +24,7 @@
 
 新增应用运行时提醒：CalendarEvent 可保存最多 5 个提前分钟数，纯函数按重复事件展开并以 `eventId:occurrenceIndex:minutes` 去重；桌面 AppShell 每 30 秒读取本地日程，在 Electron 环境通过既有通知弹窗发送提醒，浏览器环境不产生系统副作用。提醒历史仅保存在当前用户浏览器 localStorage，应用关闭后的 Windows Task Scheduler 仍未接入。
 
-当前边界：Research、Tutor、Document、Planner、Interviewer、Build、Review 和 Personal Affairs 已有自动执行器。Build 的状态流、审批门和失败重试，Review 的只读证据、报告和审批恢复，Personal Affairs 的审批后本地计划/日程/记录写入以及 CalendarEvent 的时区/RRULE/冲突规则已通过隔离 Fixture 验证；真实模型代码修改、Shell 验证、跨进程 Session 恢复、Review 结论质量、提醒、外部日历和真人 Diff 审阅仍未形成独立验收。当前 RRULE 仅支持有限字段，不覆盖复杂 BYSETPOS、BYWEEKNO 或完整日历标准语义。Tutor/Interviewer 的学习与面试效果、模型质量和跨进程恢复已通过隔离 Fixture 验证，真实模型质量和真人效果仍未形成独立指标。XLSX/PPTX 解析、Windows Task Scheduler、CalDAV/Google/Microsoft 同步和独立安装发布仍未完成。
+当前边界：Research、Tutor、Document、Planner、Interviewer、Build、Review 和 Personal Affairs 已有自动执行器。Build 的状态流、审批门和失败重试，Review 的只读证据、报告和审批恢复，Personal Affairs 的审批后本地计划/日程/记录写入以及 CalendarEvent 的时区/RRULE/冲突规则已通过隔离 Fixture 验证；真实模型代码修改、Shell 验证、跨进程 Session 恢复、Review 结论质量、提醒、外部日历和真人 Diff 审阅仍未形成独立验收。当前 RRULE 仅支持有限字段，不覆盖复杂 BYSETPOS、BYWEEKNO 或完整日历标准语义。Tutor/Interviewer 的学习与面试效果、模型质量和跨进程恢复已通过隔离 Fixture 验证，真实模型质量和真人效果仍未形成独立指标。Windows Task Scheduler、CalDAV/Google/Microsoft 同步和独立安装发布仍未完成。
 
 验证记录：根集成与 Memory 测试 19 项、桌面测试 31 项（含 Calendar 两项、ICS Connector 一项、Reminder 一项、Build 两项、Review 一项、Personal Affairs 一项和 Personal Planning 回归一项）、浏览器测试 2 项通过；`desktop` TypeScript、ESLint、生产构建通过。真实模型质量、外部同步可靠性和生活规划效果未通过独立真人验收，不作生产指标声明。
 

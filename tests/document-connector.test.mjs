@@ -20,6 +20,21 @@ async function docxFixture(text) {
   return zip.generateAsync({ type: 'nodebuffer' });
 }
 
+async function xlsxFixture() {
+  const zip = new JSZip();
+  zip.file('xl/workbook.xml', '<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="学习" sheetId="1" r:id="rId1"/></sheets></workbook>');
+  zip.file('xl/_rels/workbook.xml.rels', '<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>');
+  zip.file('xl/sharedStrings.xml', '<sst><si><t>Harness</t></si></sst>');
+  zip.file('xl/worksheets/sheet1.xml', '<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1"><v>42</v></c></row></sheetData></worksheet>');
+  return zip.generateAsync({ type: 'nodebuffer' });
+}
+
+async function pptxFixture() {
+  const zip = new JSZip();
+  zip.file('ppt/slides/slide1.xml', '<p:sld xmlns:p="p" xmlns:a="a"><p:cSld><p:spTree><a:t>Slide evidence</a:t></p:spTree></p:cSld></p:sld>');
+  return zip.generateAsync({ type: 'nodebuffer' });
+}
+
 test('local Connector exposes health, bounded reads and content versions', async () => {
   const root = await mkdtemp(join(tmpdir(), 'bt-connector-'));
   try {
@@ -50,10 +65,16 @@ test('DocumentBlock preserves line, paragraph and page-style locators', async ()
     assert.equal(paragraphs[0].locator, 'P1');
     assert.match(paragraphs[0].text, /DOCX evidence/);
     const xlsx = join(root, 'notes.xlsx');
-    await writeFile(xlsx, 'fixture');
-    const unsupported = await documentApi.parseDocument(xlsx);
-    assert.equal(unsupported[0].metadata.parseStatus, 'unsupported');
-    assert.equal(unsupported[0].format, 'xlsx');
+    await writeFile(xlsx, await xlsxFixture());
+    const cells = await documentApi.parseDocument(xlsx);
+    assert.equal(cells[0].metadata.parseStatus, 'ok');
+    assert.equal(cells[0].locator, 'sheet:学习!A1');
+    assert.equal(cells[0].text, 'Harness');
+    const pptx = join(root, 'slides.pptx');
+    await writeFile(pptx, await pptxFixture());
+    const slides = await documentApi.parseDocument(pptx);
+    assert.equal(slides[0].locator, 'slide:1');
+    assert.match(slides[0].text, /Slide evidence/);
     const pdf = join(root, 'notes.pdf');
     await writeFile(pdf, pdfFixture('DocumentBlock PDF evidence'));
     const pages = await documentApi.parseDocument(pdf);

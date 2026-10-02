@@ -6,9 +6,9 @@ BT-Agent 在保留 Pi Session、Extension、Memory 和桌面聊天能力的基�
 
 第一条真实执行闭环是 Project Research：Research Task 创建后启动受限 Pi Session，监听 `tool_execution_start/end`、`message_end` 和 `agent_end`；只读工具动作记录为 Action，工具结果记录为带 SHA-256 的 Evidence，报告写入 `.bt/artifacts` 并登记 Artifact。报告完成后进入用户审批，批准后继续 Tutor / Interviewer 验证、规则评估和待审阅 Memory Candidate。L2 工具进入逐 Action 审批，L3 工具默认拒绝；这层策略不把 Pi Project Trust 当作沙箱。
 
-桌面任务中心已能查看步骤、Action、Evidence、Artifact、Evaluation 和审批入口；`/api/bt/documents` 提供本地 Markdown/文本/PDF 页级解析和 DOCX 段落解析，XLSX/PPTX 当前会明确返回解析器未接入；Connector SDK 已定义能力、版本、健康检查和同步接口，并提供受根目录约束的 Local File Connector。备份中心只备份 Harness/计划/随手记/项目设置和 Markdown Memory，恢复前自动生成安全快照，不处理 Pi 凭据或 Session。
+桌面任务中心已能查看步骤、Action、Evidence、Artifact、Evaluation 和审批入口；`/api/bt/documents` 提供本地 Markdown/文本/PDF 页级解析、DOCX 段落解析、XLSX 工作表单元格解析和 PPTX 幻灯片文本解析，未知格式会明确返回解析器未接入；Connector SDK 已定义能力、版本、健康检查和同步接口，并提供受根目录约束的 Local File Connector。备份中心只备份 Harness/计划/随手记/项目设置和 Markdown Memory，恢复前自动生成安全快照，不处理 Pi 凭据或 Session。
 
-已验证：Harness、Research Runner、Tutor Runner、Document Runner、Planner Runner、Interviewer Runner、状态机、审批过期、Markdown/PDF/DOCX 文档解析、Connector 根边界、备份恢复、CalendarEvent、ICS Connector 和运行时提醒器的隔离测试；根测试 19 项、桌面测试 31 项、浏览器测试 2 项、TypeScript、lint 和生产构建通过。尚未宣称 XLSX/PPTX 解析、应用关闭后的系统级提醒、联网日历同步、真实模型质量指标或独立安装发布完成。
+已验证：Harness、Research Runner、Tutor Runner、Document Runner、Planner Runner、Interviewer Runner、状态机、审批过期、Markdown/PDF/DOCX/XLSX/PPTX 文档解析、Connector 根边界、备份恢复、CalendarEvent、ICS Connector 和运行时提醒器的隔离测试；根测试 19 项、桌面测试 31 项、浏览器测试 2 项、TypeScript、lint 和生产构建通过。尚未宣称应用关闭后的系统级提醒、联网日历同步、真实模型质量指标或独立安装发布完成。
 
 ## Tutor Workflow 执行器（2026-10-02）
 
@@ -16,7 +16,7 @@ Tutor 已从 Profile 提升为可恢复的执行流程：`diagnose -> teach -> r
 
 ## Document Workflow 执行器（2026-10-02）
 
-Document 已从 Profile 提升为本地执行流程：`scope -> ingest -> evidence -> artifact`。运行器直接调用本地 `parseDocument`，为 Markdown/文本保存行号引用、为 DOCX 保存段落引用、为 PDF 保存页级引用；产物是 `.bt/artifacts/document-<runId>.md`，Evaluation 会记录解析结果是否被分块截断。XLSX/PPTX 当前仍返回明确的未接入错误，避免把文件存在误报为可解析能力；DOCX 使用本地 `mammoth` 提取段落文本并保留内容哈希。
+Document 已从 Profile 提升为本地执行流程：`scope -> ingest -> evidence -> artifact`。运行器直接调用本地 `parseDocument`，为 Markdown/文本保存行号引用、为 DOCX 保存段落引用、为 XLSX 保存工作表单元格引用、为 PPTX 保存幻灯片引用、为 PDF 保存页级引用；产物是 `.bt/artifacts/document-<runId>.md`，Evaluation 会记录解析结果是否被分块截断。DOCX 使用本地 `mammoth` 提取段落文本，XLSX/PPTX 使用固定版本的 ZIP/XML 解析器，未知格式仍明确返回未接入错误。
 
 ## Planner Workflow 执行器（2026-10-02）
 
