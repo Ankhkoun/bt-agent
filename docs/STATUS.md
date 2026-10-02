@@ -14,9 +14,11 @@
 
 新增 Build Workflow 执行器：先以只读 Session 完成范围检查和实施计划，用户批准后才开放代码编辑，第二次审批后才运行验证命令，最后生成带 Evidence、Artifact 和 Evaluation 的交付报告；L2 工具未经当前步骤审批时会被阻断，任务可从失败步骤重试。
 
-当前边界：Research、Tutor、Document、Planner、Interviewer 和 Build 已有自动执行器。Build 的状态流、审批门和失败重试已通过隔离 Fixture 验证；真实模型代码修改、Shell 验证、跨进程 Session 恢复和真人 Diff 审阅仍未形成独立验收。Tutor/Interviewer 的学习与面试效果、模型质量和跨进程恢复已通过隔离 Fixture 验证，真实模型质量和真人效果仍未形成独立指标。重复日程/提醒、Windows Task Scheduler、ICS/CalDAV/Google/Microsoft 同步和独立安装发布仍未完成。
+新增 Review Workflow 执行器：只读读取实现、文档、测试和 Git 变更，生成 Findings、Evidence、Risks 和 Next actions 结构化报告，保存 Review Artifact 并运行带人工复核标记的 Evaluation；误触发 L2 工具时会暂停并绑定当前步骤审批，批准后可从检查步骤继续。
 
-验证记录：根集成与 Memory 测试 19 项、桌面测试 24 项（含 Build 两项）、浏览器测试 2 项通过；`desktop` TypeScript、ESLint、生产构建通过。真实模型质量、外部同步可靠性和生活规划效果未通过独立真人验收，不作生产指标声明。
+当前边界：Research、Tutor、Document、Planner、Interviewer、Build 和 Review 已有自动执行器。Build 的状态流、审批门和失败重试，Review 的只读证据、报告和审批恢复已通过隔离 Fixture 验证；真实模型代码修改、Shell 验证、跨进程 Session 恢复、Review 结论质量和真人 Diff 审阅仍未形成独立验收。Tutor/Interviewer 的学习与面试效果、模型质量和跨进程恢复已通过隔离 Fixture 验证，真实模型质量和真人效果仍未形成独立指标。重复日程/提醒、Windows Task Scheduler、ICS/CalDAV/Google/Microsoft 同步和独立安装发布仍未完成。
+
+验证记录：根集成与 Memory 测试 19 项、桌面测试 25 项（含 Build 两项和 Review 一项）、浏览器测试 2 项通过；`desktop` TypeScript、ESLint、生产构建通过。真实模型质量、外部同步可靠性和生活规划效果未通过独立真人验收，不作生产指标声明。
 
 更新：2026-09-30。
 

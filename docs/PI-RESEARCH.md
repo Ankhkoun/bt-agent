@@ -32,6 +32,12 @@ Build 已从 Profile 提升为带审批的工程执行流程：`scope -> inspect
 
 当前只完成隔离 Fixture 验证，证明状态转换、审批门、L2 阻断、产物生成和失败重试逻辑；尚未用真实模型在真实项目上完成代码修改、Shell 验证、跨进程恢复和真人 Diff 审阅，因此不宣称 Build 已达到生产执行能力。
 
+## Review Workflow 执行器（2026-10-02）
+
+Review 已从 Profile 提升为只读审查流程：`scope -> inspect -> findings -> artifact`。运行器使用 `read/grep/find/ls/git` 检查实现、文档、测试和变更，工具结果和助手报告都保存为 Evidence；最终生成 `review-report`，并以人工复核标记的 Evaluation 记录 Findings、风险和后续动作。若模型误调用 L2 工具，Harness 会记录 blocked Action、绑定当前检查步骤的审批，批准后从 `inspect` 继续。
+
+当前只完成隔离 Fixture 验证，证明只读工具证据、报告产物、规则评估和审批恢复逻辑；真实审查结论质量、跨进程恢复和真人审阅仍未验证。
+
 GUI 追加阶段见 [GUI-RESEARCH.md](GUI-RESEARCH.md)：采用社区 Pi Web Desktop 的 Electron 壳和聊天组件，通过同版官方 SDK 加载现有 BT Extension；原 V0.1 不做前端的限制已被用户明确升级需求替代。
 
 核验日期：2026-09-16。先阅读官方仓库/文档，再实现；安装后同时核对发布包文档、`.d.ts` 和实际行为。

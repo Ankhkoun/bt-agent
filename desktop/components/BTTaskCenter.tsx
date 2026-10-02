@@ -19,6 +19,7 @@ type Detail = Task & { runs: Run[]; steps: Step[]; actions: { id: string; kind: 
 
 const workflows = [
   ["research", "项目研究"],
+  ["review", "Review 审查"],
   ["build", "工程执行"],
   ["tutor", "Tutor 学习"],
   ["interviewer", "Interviewer 面试"],
