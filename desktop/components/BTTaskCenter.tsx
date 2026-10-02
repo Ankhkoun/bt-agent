@@ -123,8 +123,9 @@ export function BTTaskCenter() {
 
   const activeRun = selected?.runs.find((run) => ["running", "paused", "waiting_approval"].includes(run.status)) ?? selected?.runs[0];
   const currentStep = activeRun ? selected?.steps.find((step) => step.id === activeRun.currentStepId) : undefined;
-  const needsTutorAnswer = selected?.workflowId === "tutor" && activeRun?.status === "paused" && (currentStep?.kind === "recall" || currentStep?.kind === "variant");
-  const tutorPrompt = selected?.evidence.filter((item) => item.sourceType === "tutor-assistant").at(-1)?.quote;
+  const workflow = selected?.workflowId;
+  const needsInteractiveAnswer = (workflow === "tutor" && (currentStep?.kind === "recall" || currentStep?.kind === "variant") || workflow === "interviewer" && (currentStep?.kind === "ask" || currentStep?.kind === "follow_up")) && activeRun?.status === "paused";
+  const interactivePrompt = selected?.evidence.filter((item) => item.sourceType === (workflow === "interviewer" ? "interviewer-assistant" : "tutor-assistant")).at(-1)?.quote;
   const activeStatus = activeRun?.status;
 
   useEffect(() => {
@@ -170,14 +171,14 @@ export function BTTaskCenter() {
         <div className="bt-task-actions">
           {!activeRun && !["completed", "cancelled"].includes(selected.status) && <button type="button" className="bt-primary" disabled={busy} onClick={() => void action(selected.id, "start")}><Play size={15}/>开始运行</button>}
           {activeRun?.status === "running" && <button type="button" disabled={busy} onClick={() => void action(selected.id, "pause", activeRun.id)}><Pause size={15}/>暂停</button>}
-          {activeRun?.status === "paused" && !needsTutorAnswer && <button type="button" className="bt-primary" disabled={busy} onClick={() => void action(selected.id, "resume", activeRun.id)}><Play size={15}/>继续</button>}
+          {activeRun?.status === "paused" && !needsInteractiveAnswer && <button type="button" className="bt-primary" disabled={busy} onClick={() => void action(selected.id, "resume", activeRun.id)}><Play size={15}/>继续</button>}
           {activeRun?.status === "failed" && currentStep?.status === "failed" && <button type="button" className="bt-primary" disabled={busy} onClick={() => void retryFailedStep(activeRun.id, currentStep.id)}><ArrowClockwise size={15}/>重试步骤</button>}
           {activeRun && ["running", "paused", "waiting_approval"].includes(activeRun.status) && <button type="button" disabled={busy} onClick={() => void action(selected.id, "cancel", activeRun.id)}><XCircle size={15}/>取消</button>}
         </div>
         {activeRun?.failureReason && <p className="bt-task-failure">失败原因：{activeRun.failureReason}</p>}
-        {needsTutorAnswer && activeRun && <form className="bt-tutor-response" onSubmit={(event) => void submitTutorAnswer(event, selected.id, activeRun.id)}>
-          {tutorPrompt && <blockquote>{tutorPrompt}</blockquote>}
-          <label>你的回答<textarea required rows={5} maxLength={12000} value={tutorAnswer} onChange={(event) => setTutorAnswer(event.target.value)} placeholder={currentStep?.kind === "recall" ? "写出你对概念的理解" : "尝试把概念应用到变式场景"}/></label>
+        {needsInteractiveAnswer && activeRun && <form className="bt-tutor-response" onSubmit={(event) => void submitTutorAnswer(event, selected.id, activeRun.id)}>
+          {interactivePrompt && <blockquote>{interactivePrompt}</blockquote>}
+          <label>你的回答<textarea required rows={5} maxLength={12000} value={tutorAnswer} onChange={(event) => setTutorAnswer(event.target.value)} placeholder={selected.workflowId === "interviewer" ? (currentStep?.kind === "ask" ? "回答核心问题" : "回答追问") : currentStep?.kind === "recall" ? "写出你对概念的理解" : "尝试把概念应用到变式场景"}/></label>
           <button type="submit" className="bt-primary" disabled={busy || !tutorAnswer.trim()}>提交回答</button>
         </form>}
         {activeRun && <><h4>运行步骤</h4><ol className="bt-task-steps">{selected.steps.filter((step) => step.runId === activeRun.id).map((step) => <li key={step.id} className={`step-${step.status}`}><span>{step.title}</span><em>{statusLabel[step.status] ?? step.status}{step.requiresApproval ? " · 需审批" : ""}</em></li>)}</ol></>}

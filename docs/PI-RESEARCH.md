@@ -8,7 +8,7 @@ BT-Agent 在保留 Pi Session、Extension、Memory 和桌面聊天能力的基�
 
 桌面任务中心已能查看步骤、Action、Evidence、Artifact、Evaluation 和审批入口；`/api/bt/documents` 提供本地 Markdown/文本/PDF 页级解析，DOCX/XLSX/PPTX 当前会明确返回解析器未接入；Connector SDK 已定义能力、版本、健康检查和同步接口，并提供受根目录约束的 Local File Connector。备份中心只备份 Harness/计划/随手记/项目设置和 Markdown Memory，恢复前自动生成安全快照，不处理 Pi 凭据或 Session。
 
-已验证：Harness、Research Runner、Tutor Runner、Document Runner、Planner Runner、状态机、审批过期、文档页级解析、Connector 根边界、备份恢复的隔离测试；根测试 19 项、桌面测试 21 项、浏览器测试 2 项、TypeScript、lint 和生产构建通过。尚未宣称 Office 全格式解析、日历重复规则/提醒、外部日历同步、联网 Connector、真实模型质量指标或独立安装发布完成。
+已验证：Harness、Research Runner、Tutor Runner、Document Runner、Planner Runner、Interviewer Runner、状态机、审批过期、文档页级解析、Connector 根边界、备份恢复的隔离测试；根测试 19 项、桌面测试 22 项、浏览器测试 2 项、TypeScript、lint 和生产构建通过。尚未宣称 Office 全格式解析、日历重复规则/提醒、外部日历同步、联网 Connector、真实模型质量指标或独立安装发布完成。
 
 ## Tutor Workflow 执行器（2026-10-02）
 
@@ -21,6 +21,10 @@ Document 已从 Profile 提升为本地执行流程：`scope -> ingest -> eviden
 ## Planner Workflow 执行器（2026-10-02）
 
 Planner 已从 Profile 提升为受审批的本地计划流程：`goal -> constraints -> propose -> schedule`。运行器先生成计划候选 Artifact，不直接写入计划本；用户批准 L1 Action 后才通过既有 revision/原子替换逻辑创建正式事项。当前候选使用任务的 `metadata.date/project/priority`，复杂 RRULE、提醒和外部日历同步仍未接入。
+
+## Interviewer Workflow 执行器（2026-10-02）
+
+Interviewer 已从 Profile 提升为可恢复的面试流程：`scope -> ask -> follow_up -> evaluate`。两轮用户回答通过任务中心提交，助手反馈和回答以 Evidence 保存，最终生成面试报告和待人工复核的 Evaluation；当前不自动解析简历，也不宣称面试评价等同于真实能力。
 
 GUI 追加阶段见 [GUI-RESEARCH.md](GUI-RESEARCH.md)：采用社区 Pi Web Desktop 的 Electron 壳和聊天组件，通过同版官方 SDK 加载现有 BT Extension；原 V0.1 不做前端的限制已被用户明确升级需求替代。
 
