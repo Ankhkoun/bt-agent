@@ -20,11 +20,13 @@
 
 新增本地 CalendarEvent 基础：校验 IANA 时区和 ISO 时间，支持 DAILY/WEEKLY/MONTHLY 的有限 RRULE、夏令时无效时间拒绝、范围展开和冲突检测；日程通过独占 revision 写入并纳入备份。
 
+新增日程工作流界面：计划本弹窗拆分「计划本 / 日程」页，日程页支持周/月展开、按事件时区显示重复事件、创建/编辑/删除、本地冲突提示和 revision 冲突反馈。新增本地 ICS Connector，支持健康检查、读取、创建、更新、删除和同步游标；ICS 保留事件时区、RRULE、任务关联和备注。提醒调度、CalDAV/Google/Microsoft 等联网同步仍未接入。
+
 当前边界：Research、Tutor、Document、Planner、Interviewer、Build、Review 和 Personal Affairs 已有自动执行器。Build 的状态流、审批门和失败重试，Review 的只读证据、报告和审批恢复，Personal Affairs 的审批后本地计划/日程/记录写入以及 CalendarEvent 的时区/RRULE/冲突规则已通过隔离 Fixture 验证；真实模型代码修改、Shell 验证、跨进程 Session 恢复、Review 结论质量、提醒、外部日历和真人 Diff 审阅仍未形成独立验收。当前 RRULE 仅支持有限字段，不覆盖复杂 BYSETPOS、BYWEEKNO 或完整日历标准语义。Tutor/Interviewer 的学习与面试效果、模型质量和跨进程恢复已通过隔离 Fixture 验证，真实模型质量和真人效果仍未形成独立指标。Windows Task Scheduler、ICS/CalDAV/Google/Microsoft 同步和独立安装发布仍未完成。
 
-验证记录：根集成与 Memory 测试 19 项、桌面测试 29 项（含 Calendar 两项、Build 两项、Review 一项、Personal Affairs 一项和 Personal Planning 回归一项）、浏览器测试 2 项通过；`desktop` TypeScript、ESLint、生产构建通过。真实模型质量、外部同步可靠性和生活规划效果未通过独立真人验收，不作生产指标声明。
+验证记录：根集成与 Memory 测试 19 项、桌面测试 30 项（含 Calendar 两项、ICS Connector 一项、Build 两项、Review 一项、Personal Affairs 一项和 Personal Planning 回归一项）、浏览器测试 2 项通过；`desktop` TypeScript、ESLint、生产构建通过。真实模型质量、外部同步可靠性和生活规划效果未通过独立真人验收，不作生产指标声明。
 
-更新：2026-09-30。
+更新：2026-10-02。
 
 新增可审阅长期记忆与学习证据：`bt_memory_propose` 在当前 Session 分支匹配原文，候选确认前不写 Markdown；Memory 页面与 `/memory-review` 支持用户确认、拒绝、撤销。知识地图须提供知识点、建议等级、回答依据、缺口和下一验证问题，保留 AI评估/待验证标签。共享存储采用独占锁、revision/文件哈希校验、原子替换和事务恢复。根 19 项、桌面 9 项、浏览器 2 项与隔离 Edge 审阅 UI 测试通过，类型检查/lint/生产构建通过；无真实模型质量评测，个人 Memory 未修改。设计见 [MEMORY-REVIEW.md](MEMORY-REVIEW.md)，履历与贡献边界见 [RESUME-PROJECT.md](RESUME-PROJECT.md)。运行中的用户桌面未自动重启，需重新启动以加载新构建。
 

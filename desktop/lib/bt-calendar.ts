@@ -30,6 +30,19 @@ export function saveCalendarEvent(value: unknown, revision: unknown, root = btRo
   return book;
 }
 
+export function deleteCalendarEvent(id: unknown, revision: unknown, root = btRoot()): CalendarBook {
+  if (typeof id !== "string" || !id.trim() || id.length > 120) throw new Error("日程 ID 无效");
+  const book = readCalendar(root);
+  if (revision !== book.revision) throw new CalendarConflict("日程已在其他窗口更新，请刷新后重试；当前输入仍保留。");
+  const index = book.events.findIndex((item) => item.id === id);
+  if (index < 0) throw new Error("日程不存在或已被删除，请刷新后重试");
+  book.events.splice(index, 1);
+  book.revision += 1;
+  mkdirSync(join(root, ".bt"), { recursive: true });
+  writePrivateFileAtomicSync(path(root), JSON.stringify(book, null, 2));
+  return book;
+}
+
 export function newCalendarEvent(input: Partial<CalendarEvent>): CalendarEvent {
   const now = new Date().toISOString();
   return validateCalendarEvent({ id: randomUUID(), title: "", startAt: "", endAt: "", timeZone: "UTC", rrule: "", taskId: "", status: "scheduled", notes: "", providerLinks: {}, createdAt: now, updatedAt: now, ...input });

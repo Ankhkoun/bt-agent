@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { writePrivateFileAtomicSync } from "./atomic-file";
-import type { Connector, ConnectorContext, ConnectorItem } from "./bt-connector";
+import type { Connector, ConnectorItem } from "./bt-connector";
 import { validateCalendarEvent, zonedLocalToInstant, zonedPartsAt, type CalendarEvent } from "./bt-calendar-model";
 
 export interface IcsCalendarItem extends ConnectorItem {
@@ -96,11 +96,11 @@ export function createIcsConnector(filePath: string): Connector<IcsCalendarItem>
     id: "ics",
     version: "1.0.0",
     capabilities: ["read", "create", "update", "delete", "sync"],
-    async healthCheck(_context?: ConnectorContext) { return { ok: true, ...(existsSync(target) ? {} : { message: "ICS 文件尚未创建" }) }; },
+    async healthCheck() { return { ok: true, ...(existsSync(target) ? {} : { message: "ICS 文件尚未创建" }) }; },
     async read(id: string) { if (id !== "calendar") throw new Error("ICS Connector 只支持 calendar 资源"); return read(); },
     async create(value: IcsCalendarItem) { return write(value.content.map(validateCalendarEvent)); },
     async update(_id: string, value: Partial<IcsCalendarItem>) { return write((value.content ?? read().content).map(validateCalendarEvent)); },
     async delete(id: string) { if (id !== "calendar") throw new Error("ICS Connector 只支持 calendar 资源"); write([]); },
-    async sync(_context?: ConnectorContext) { const current = read(); return { cursor: current.version, items: [current] }; },
+    async sync() { const current = read(); return { cursor: current.version, items: [current] }; },
   };
 }

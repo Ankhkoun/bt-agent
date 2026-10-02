@@ -8,7 +8,7 @@ BT-Agent 在保留 Pi Session、Extension、Memory 和桌面聊天能力的基�
 
 桌面任务中心已能查看步骤、Action、Evidence、Artifact、Evaluation 和审批入口；`/api/bt/documents` 提供本地 Markdown/文本/PDF 页级解析，DOCX/XLSX/PPTX 当前会明确返回解析器未接入；Connector SDK 已定义能力、版本、健康检查和同步接口，并提供受根目录约束的 Local File Connector。备份中心只备份 Harness/计划/随手记/项目设置和 Markdown Memory，恢复前自动生成安全快照，不处理 Pi 凭据或 Session。
 
-已验证：Harness、Research Runner、Tutor Runner、Document Runner、Planner Runner、Interviewer Runner、状态机、审批过期、文档页级解析、Connector 根边界、备份恢复的隔离测试；根测试 19 项、桌面测试 22 项、浏览器测试 2 项、TypeScript、lint 和生产构建通过。尚未宣称 Office 全格式解析、日历重复规则/提醒、外部日历同步、联网 Connector、真实模型质量指标或独立安装发布完成。
+已验证：Harness、Research Runner、Tutor Runner、Document Runner、Planner Runner、Interviewer Runner、状态机、审批过期、文档页级解析、Connector 根边界、备份恢复、CalendarEvent 和本地 ICS Connector 的隔离测试；根测试 19 项、桌面测试 30 项、浏览器测试 2 项、TypeScript、lint 和生产构建通过。尚未宣称 Office 全格式解析、提醒调度、联网日历同步、真实模型质量指标或独立安装发布完成。
 
 ## Tutor Workflow 执行器（2026-10-02）
 
@@ -48,7 +48,11 @@ Personal Affairs 已从 Profile 提升为本地事务闭环：`capture -> clarif
 
 新增 `.bt/calendar.json` 本地日程存储和 `/api/bt/calendar` 入口。CalendarEvent 强制保存带时区的开始/结束时间，使用 revision/原子替换避免并发覆盖；当前 RRULE 支持 `DAILY`、`WEEKLY`、`MONTHLY`、`INTERVAL`、`COUNT`、`UNTIL`、有限 `BYDAY`/`BYMONTHDAY`，并通过 `Intl.DateTimeFormat` 按 IANA 时区展开，拒绝落入夏令时无效区间的本地时间。冲突检测在给定范围展开事件后比较区间重叠，Personal Affairs 在用户批准后可写入本地日程并记录 Harness 事件。
 
-当前没有宣称完整 RFC 5545 语义：复杂 BYSETPOS/BYWEEKNO、外部 ETag/同步游标、提醒调度、ICS/CalDAV/Google/Microsoft Connector 尚未接入。
+当前没有宣称完整 RFC 5545 语义：复杂 BYSETPOS/BYWEEKNO、提醒调度、CalDAV/Google/Microsoft Connector 尚未接入。新增日程界面支持本地周/月查看、编辑和删除；删除与更新沿用 calendar revision 冲突保护，冲突只提示用户，不自动覆盖或自动排程。
+
+## 本地 ICS Connector（日程工作流追加，2026-10-02）
+
+`createIcsConnector` 实现本地 ICS 文件的 `healthCheck/read/create/update/delete/sync`，统一返回 CalendarEvent 列表和内容 SHA-256 版本。序列化保留 IANA `TZID`、UTC 时间、RRULE、`X-BT-TASK-ID` 和描述；读取支持带时区本地时间与 UTC 时间，写入使用既有私有文件原子替换。同步游标是当前规范化 ICS 内容的版本哈希，尚未实现远端 ETag、离线队列或冲突补偿。
 
 GUI 追加阶段见 [GUI-RESEARCH.md](GUI-RESEARCH.md)：采用社区 Pi Web Desktop 的 Electron 壳和聊天组件，通过同版官方 SDK 加载现有 BT Extension；原 V0.1 不做前端的限制已被用户明确升级需求替代。
 

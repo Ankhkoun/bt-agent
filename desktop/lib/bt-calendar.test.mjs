@@ -32,5 +32,9 @@ test('calendar validation and conflict detection preserve timezone and reject st
     let book = store.saveCalendarEvent(event(), 0, root);
     assert.equal(book.revision, 1);
     await assert.rejects(() => readFile(join(root, '.bt', 'calendar.json'), 'utf8').then(() => store.saveCalendarEvent(second, 0, root)), /日程已在其他窗口更新/);
+    book = store.deleteCalendarEvent('event-1', 1, root);
+    assert.equal(book.revision, 2);
+    assert.equal(book.events.length, 0);
+    assert.throws(() => store.deleteCalendarEvent('event-1', 2, root), /日程不存在/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
