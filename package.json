@@ -16,7 +16,7 @@
     "test": "node --test tests/integration.test.mjs tests/document-read.test.mjs tests/memory-review.test.mjs",
     "test:memory": "node --test tests/memory-review.test.mjs",
     "test:memory-ui": "node scripts/verify-memory-ui.mjs",
-    "test:desktop": "node --test tests/desktop.test.mjs tests/desktop-proxy.test.mjs",
+    "test:desktop": "node --test tests/desktop.test.mjs tests/desktop-proxy.test.mjs tests/harness.test.mjs tests/harness-runner.test.mjs tests/document-connector.test.mjs tests/backup.test.mjs",
     "test:browser": "node --test tests/browser.test.mjs",
     "verify": "node scripts/run-npm.mjs run check && node scripts/run-npm.mjs test && node scripts/run-npm.mjs run check:desktop && node scripts/run-npm.mjs run lint:desktop && node scripts/run-npm.mjs run build:desktop && node scripts/run-npm.mjs run test:desktop && node scripts/run-npm.mjs run test:browser",
     "acceptance": "node scripts/acceptance.mjs",

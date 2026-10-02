@@ -1,5 +1,13 @@
 # BT-Agent 状态
 
+## 2026-10-02 Personal Harness 实施进度
+
+已完成 Harness Kernel 第一批实现和 Project Research 本地执行闭环：SQLite 持久化任务、运行、步骤、动作、审批、证据、产物与评估；Pi 工具事件可追踪，Research 报告和待审阅 Memory Candidate 可生成；桌面任务中心可操作运行与审批。新增本地 DocumentBlock/PDF 解析、Connector Registry/Local File Connector、备份恢复 API 与桌面入口。
+
+当前边界：Research 是唯一已自动执行的完整 Workflow；Tutor/Interviewer/Planner/Build/Document 等已有结构化 Profile，但除 Research 外仍需继续接入各自执行器。Office 解析、重复日程/提醒、Windows Task Scheduler、ICS/CalDAV/Google/Microsoft 同步和独立安装发布仍未完成。
+
+验证记录：根集成与 Memory 测试 19 项、桌面测试 17 项、浏览器测试 2 项通过；`desktop` TypeScript、ESLint、生产构建通过。真实模型质量、外部同步可靠性和生活规划效果未通过独立真人验收，不作生产指标声明。
+
 更新：2026-09-30。
 
 新增可审阅长期记忆与学习证据：`bt_memory_propose` 在当前 Session 分支匹配原文，候选确认前不写 Markdown；Memory 页面与 `/memory-review` 支持用户确认、拒绝、撤销。知识地图须提供知识点、建议等级、回答依据、缺口和下一验证问题，保留 AI评估/待验证标签。共享存储采用独占锁、revision/文件哈希校验、原子替换和事务恢复。根 19 项、桌面 9 项、浏览器 2 项与隔离 Edge 审阅 UI 测试通过，类型检查/lint/生产构建通过；无真实模型质量评测，个人 Memory 未修改。设计见 [MEMORY-REVIEW.md](MEMORY-REVIEW.md)，履历与贡献边界见 [RESUME-PROJECT.md](RESUME-PROJECT.md)。运行中的用户桌面未自动重启，需重新启动以加载新构建。

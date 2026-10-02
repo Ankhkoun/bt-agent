@@ -1,5 +1,15 @@
 # Pi 官方能力核验与 V0.1 决策
 
+## Personal Harness Kernel 与 Project Research（2026-10-02）
+
+BT-Agent 在保留 Pi Session、Extension、Memory 和桌面聊天能力的基础上，新增本地优先 Harness 数据层：`.bt/harness.db` 持久化 `Task / Run / Step / Action / Approval / Evidence / Artifact / Evaluation`，并通过状态机、追加式事件和 SQLite 事务支持暂停、恢复、失败重试、审批过期与运行回放。
+
+第一条真实执行闭环是 Project Research：Research Task 创建后启动受限 Pi Session，监听 `tool_execution_start/end`、`message_end` 和 `agent_end`；只读工具动作记录为 Action，工具结果记录为带 SHA-256 的 Evidence，报告写入 `.bt/artifacts` 并登记 Artifact。报告完成后进入用户审批，批准后继续 Tutor / Interviewer 验证、规则评估和待审阅 Memory Candidate。L2 工具进入逐 Action 审批，L3 工具默认拒绝；这层策略不把 Pi Project Trust 当作沙箱。
+
+桌面任务中心已能查看步骤、Action、Evidence、Artifact、Evaluation 和审批入口；`/api/bt/documents` 提供本地 Markdown/文本/PDF 页级解析，DOCX/XLSX/PPTX 当前会明确返回解析器未接入；Connector SDK 已定义能力、版本、健康检查和同步接口，并提供受根目录约束的 Local File Connector。备份中心只备份 Harness/计划/随手记/项目设置和 Markdown Memory，恢复前自动生成安全快照，不处理 Pi 凭据或 Session。
+
+已验证：Harness、Research Runner、状态机、审批过期、文档页级解析、Connector 根边界、备份恢复的隔离测试；根测试 19 项、桌面测试 17 项、浏览器测试 2 项、TypeScript、lint 和生产构建通过。尚未宣称 Office 全格式解析、日历重复规则/提醒、外部日历同步、联网 Connector、真实模型质量指标或独立安装发布完成。
+
 GUI 追加阶段见 [GUI-RESEARCH.md](GUI-RESEARCH.md)：采用社区 Pi Web Desktop 的 Electron 壳和聊天组件，通过同版官方 SDK 加载现有 BT Extension；原 V0.1 不做前端的限制已被用户明确升级需求替代。
 
 核验日期：2026-09-16。先阅读官方仓库/文档，再实现；安装后同时核对发布包文档、`.d.ts` 和实际行为。
