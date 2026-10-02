@@ -12,14 +12,16 @@ test('ICS Connector round-trips timezone, RRULE, task link and sync cursor', asy
   const root = await mkdtemp(join(tmpdir(), 'bt-ics-'));
   try {
     const connector = createIcsConnector(join(root, 'calendar.ics'));
-    const event = { id: 'event-1', title: '学习', startAt: '2026-10-09T01:00:00.000Z', endAt: '2026-10-09T02:00:00.000Z', timeZone: 'Asia/Shanghai', rrule: 'FREQ=WEEKLY;BYDAY=FR', taskId: 'task-1', status: 'scheduled', notes: '复盘', providerLinks: {}, createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z' };
+    const event = { id: 'event-1', title: '学习', startAt: '2026-10-09T01:00:00.000Z', endAt: '2026-10-09T02:00:00.000Z', timeZone: 'Asia/Shanghai', rrule: 'FREQ=WEEKLY;BYDAY=FR', reminderMinutes: [15], taskId: 'task-1', status: 'scheduled', notes: '复盘', providerLinks: {}, createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z' };
     await connector.create({ id: 'calendar', content: [event], title: 'ICS Calendar' });
     const raw = await readFile(join(root, 'calendar.ics'), 'utf8');
     assert.match(raw, /DTSTART;TZID=Asia\/Shanghai:20261009T090000/);
+    assert.match(raw, /TRIGGER:-PT15M/);
     const read = await connector.read('calendar');
     assert.equal(read.content[0].timeZone, 'Asia/Shanghai');
     assert.equal(read.content[0].rrule, 'FREQ=WEEKLY;BYDAY=FR');
     assert.equal(read.content[0].taskId, 'task-1');
+    assert.deepEqual(read.content[0].reminderMinutes, [15]);
     const sync = await connector.sync();
     assert.equal(sync.cursor, read.version);
     await connector.delete('calendar');

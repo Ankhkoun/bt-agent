@@ -8,6 +8,7 @@ export interface CalendarEvent {
   endAt: string;
   timeZone: string;
   rrule: string;
+  reminderMinutes: number[];
   taskId: string;
   status: CalendarStatus;
   notes: string;
@@ -101,6 +102,8 @@ export function validateCalendarEvent(value: unknown): CalendarEvent {
   if (!isValidTimeZone(item.timeZone)) throw new Error("日程时区无效");
   if (typeof item.rrule !== "string" || item.rrule.length > 1000) throw new Error("RRULE 无效");
   parseRRule(item.rrule);
+  const reminderMinutes = item.reminderMinutes === undefined ? [] : item.reminderMinutes;
+  if (!Array.isArray(reminderMinutes) || reminderMinutes.length > 5 || reminderMinutes.some((value) => !Number.isSafeInteger(value) || value < 0 || value > 10080)) throw new Error("提醒时间必须是 0–10080 分钟内的整数，最多 5 项");
   if (typeof item.taskId !== "string" || item.taskId.length > 120 || typeof item.notes !== "string" || item.notes.length > 20000) throw new Error("日程关联或备注无效");
   if (!CALENDAR_STATUSES.includes(item.status as CalendarStatus)) throw new Error("日程状态无效");
   const providerLinks = item.providerLinks && typeof item.providerLinks === "object" && !Array.isArray(item.providerLinks) ? item.providerLinks as Record<string, unknown> : {};
@@ -112,7 +115,7 @@ export function validateCalendarEvent(value: unknown): CalendarEvent {
   if (typeof item.createdAt !== "string" || typeof item.updatedAt !== "string") throw new Error("日程时间戳无效");
   return {
     id: item.id.trim(), title: item.title.trim(), startAt: item.startAt as string, endAt: item.endAt as string,
-    timeZone: item.timeZone as string, rrule: item.rrule, taskId: item.taskId, status: item.status as CalendarStatus,
+    timeZone: item.timeZone as string, rrule: item.rrule, reminderMinutes: [...new Set(reminderMinutes)].sort((a, b) => a - b), taskId: item.taskId, status: item.status as CalendarStatus,
     notes: item.notes, providerLinks: links, createdAt: item.createdAt, updatedAt: item.updatedAt,
   };
 }

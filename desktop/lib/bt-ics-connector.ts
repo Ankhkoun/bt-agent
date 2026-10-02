@@ -51,7 +51,7 @@ function parseIcs(content: string, path: string): CalendarEvent[] {
     const timeZone = start.params.TZID ?? "UTC";
     const event = validateCalendarEvent({
       id: uid, title: summary, startAt: parseDateValue(start.value, timeZone), endAt: parseDateValue(end.value, timeZone), timeZone,
-      rrule: property(body, "RRULE")?.value ?? "", taskId: property(body, "X-BT-TASK-ID")?.value ?? "", status: "scheduled",
+      rrule: property(body, "RRULE")?.value ?? "", reminderMinutes: [...body.join("\n").matchAll(/TRIGGER:-PT(\d+)M/gi)].map((match) => Number(match[1])), taskId: property(body, "X-BT-TASK-ID")?.value ?? "", status: "scheduled",
       notes: property(body, "DESCRIPTION")?.value ?? "", providerLinks: { ics: path }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     });
     events.push(event);
@@ -67,6 +67,7 @@ function serializeIcs(events: CalendarEvent[]): string {
     lines.push(hasZone ? `DTSTART;TZID=${event.timeZone}:${formatDateValue(event.startAt, event.timeZone)}` : `DTSTART:${formatDateValue(event.startAt, "UTC")}Z`);
     lines.push(hasZone ? `DTEND;TZID=${event.timeZone}:${formatDateValue(event.endAt, event.timeZone)}` : `DTEND:${formatDateValue(event.endAt, "UTC")}Z`);
     if (event.rrule) lines.push(`RRULE:${event.rrule}`);
+    for (const minutes of event.reminderMinutes) lines.push("BEGIN:VALARM", "ACTION:DISPLAY", `TRIGGER:-PT${minutes}M`, `DESCRIPTION:${escape(event.title)}`, "END:VALARM");
     if (event.notes) lines.push(`DESCRIPTION:${escape(event.notes)}`);
     if (event.taskId) lines.push(`X-BT-TASK-ID:${escape(event.taskId)}`);
     lines.push("END:VEVENT");

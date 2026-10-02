@@ -11,6 +11,7 @@ type CalendarDraft = {
   endLocal: string;
   timeZone: string;
   rrule: string;
+  reminderText: string;
   taskId: string;
   status: CalendarEvent["status"];
   notes: string;
@@ -34,13 +35,13 @@ function isoFromLocal(value: string, timeZone: string): string {
 }
 
 function toDraft(event: CalendarEvent): CalendarDraft {
-  return { id: event.id, title: event.title, startLocal: localInput(event.startAt, event.timeZone), endLocal: localInput(event.endAt, event.timeZone), timeZone: event.timeZone, rrule: event.rrule, taskId: event.taskId, status: event.status, notes: event.notes, createdAt: event.createdAt, providerLinks: event.providerLinks };
+  return { id: event.id, title: event.title, startLocal: localInput(event.startAt, event.timeZone), endLocal: localInput(event.endAt, event.timeZone), timeZone: event.timeZone, rrule: event.rrule, reminderText: event.reminderMinutes.join(", "), taskId: event.taskId, status: event.status, notes: event.notes, createdAt: event.createdAt, providerLinks: event.providerLinks };
 }
 
 function newDraft(date: string): CalendarDraft {
   const now = new Date().toISOString();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  return { id: crypto.randomUUID(), title: "", startLocal: `${date}T09:00`, endLocal: `${date}T10:00`, timeZone, rrule: "", taskId: "", status: "scheduled", notes: "", createdAt: now, providerLinks: {} };
+  return { id: crypto.randomUUID(), title: "", startLocal: `${date}T09:00`, endLocal: `${date}T10:00`, timeZone, rrule: "", reminderText: "", taskId: "", status: "scheduled", notes: "", createdAt: now, providerLinks: {} };
 }
 
 function occurrenceTime(value: string, timeZone: string): string {
@@ -97,7 +98,8 @@ export function BTCalendar() {
     try {
       const startAt = isoFromLocal(draft.startLocal, draft.timeZone);
       const endAt = isoFromLocal(draft.endLocal, draft.timeZone);
-      const event: CalendarEvent = { id: draft.id, title: draft.title, startAt, endAt, timeZone: draft.timeZone, rrule: draft.rrule, taskId: draft.taskId, status: draft.status, notes: draft.notes, providerLinks: draft.providerLinks, createdAt: draft.createdAt, updatedAt: new Date().toISOString() };
+      const reminderMinutes = draft.reminderText.split(",").map((value) => value.trim()).filter(Boolean).map((value) => Number(value));
+      const event: CalendarEvent = { id: draft.id, title: draft.title, startAt, endAt, timeZone: draft.timeZone, rrule: draft.rrule, reminderMinutes, taskId: draft.taskId, status: draft.status, notes: draft.notes, providerLinks: draft.providerLinks, createdAt: draft.createdAt, updatedAt: new Date().toISOString() };
       const response = await fetch("/api/bt/calendar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ event, revision: book.revision }) });
       const data = await response.json() as CalendarBook & { error?: string };
       if (!response.ok) throw new Error(data.error);
@@ -144,6 +146,7 @@ export function BTCalendar() {
       <div className="bt-plan-fields"><label>开始时间<input required type="datetime-local" value={draft.startLocal} onChange={(event) => setDraft({ ...draft, startLocal: event.target.value })} /></label><label>结束时间<input required type="datetime-local" value={draft.endLocal} onChange={(event) => setDraft({ ...draft, endLocal: event.target.value })} /></label><label>时区<input required list="bt-time-zones" maxLength={120} value={draft.timeZone} onChange={(event) => setDraft({ ...draft, timeZone: event.target.value })} /></label><label>关联任务 ID<input maxLength={120} value={draft.taskId} onChange={(event) => setDraft({ ...draft, taskId: event.target.value })} /></label></div>
       <datalist id="bt-time-zones"><option value="Asia/Shanghai" /><option value="UTC" /><option value="America/Los_Angeles" /><option value="Europe/Berlin" /></datalist>
       <label>重复规则<input maxLength={1000} value={draft.rrule} onChange={(event) => setDraft({ ...draft, rrule: event.target.value })} placeholder="例如 FREQ=WEEKLY;BYDAY=MO,WE" /></label>
+      <label>提前提醒（分钟，逗号分隔）<input inputMode="numeric" maxLength={40} value={draft.reminderText} onChange={(event) => setDraft({ ...draft, reminderText: event.target.value })} placeholder="例如 10, 60" /></label>
       <label>备注<textarea rows={3} maxLength={20000} value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} /></label>
       <div className="bt-plan-toolbar"><button className="bt-primary" disabled={busy}>{busy ? "保存中…" : "保存日程"}</button><button type="button" disabled={busy} onClick={() => setDraft(null)}>取消</button>{book.events.some((event) => event.id === draft.id) && <button type="button" disabled={busy} onClick={() => { const event = book.events.find((item) => item.id === draft.id); if (event) void remove(event); }}>删除日程</button>}</div>
     </form>}

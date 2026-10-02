@@ -45,5 +45,5 @@ export function deleteCalendarEvent(id: unknown, revision: unknown, root = btRoo
 
 export function newCalendarEvent(input: Partial<CalendarEvent>): CalendarEvent {
   const now = new Date().toISOString();
-  return validateCalendarEvent({ id: randomUUID(), title: "", startAt: "", endAt: "", timeZone: "UTC", rrule: "", taskId: "", status: "scheduled", notes: "", providerLinks: {}, createdAt: now, updatedAt: now, ...input });
+  return validateCalendarEvent({ id: randomUUID(), title: "", startAt: "", endAt: "", timeZone: "UTC", rrule: "", reminderMinutes: [], taskId: "", status: "scheduled", notes: "", providerLinks: {}, createdAt: now, updatedAt: now, ...input });
 }
