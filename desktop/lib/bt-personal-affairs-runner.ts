@@ -1,9 +1,10 @@
-import { randomUUID } from "node:crypto";
-import { createArtifact, evaluateTask, getRun, markStep, requestApproval } from "./bt-harness";
+import { createArtifact, evaluateTask, getRun, markStep, recordHarnessEvent, requestApproval } from "./bt-harness";
 import { btRoot } from "./bt-config";
 import { readPlanBook, savePlanItem } from "./bt-planner";
 import { localDate, type PlanItem } from "./bt-planner-model";
 import { readNotebooks, updateNotebooks } from "./bt-notebooks";
+import { findCalendarConflicts, type CalendarEvent } from "./bt-calendar-model";
+import { newCalendarEvent, readCalendar, saveCalendarEvent } from "./bt-calendar";
 
 export interface PersonalAffairsRunnerOptions { root?: string }
 
@@ -20,7 +21,7 @@ function planItem(detail: ReturnType<typeof currentStep>): PlanItem {
   const priority = metadata.priority === "P1" || metadata.priority === "P2" || metadata.priority === "P3" ? metadata.priority : "P2";
   const date = typeof metadata.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(metadata.date) ? metadata.date : localDate();
   return {
-    id: randomUUID(),
+    id: `harness-affair-${detail.detail.task.id}`,
     title: detail.detail.task.objective,
     kind: "task",
     status: "todo",
@@ -33,6 +34,21 @@ function planItem(detail: ReturnType<typeof currentStep>): PlanItem {
     updatedAt: new Date().toISOString(),
     steps: [],
   };
+}
+
+function calendarDraft(detail: ReturnType<typeof currentStep>): CalendarEvent | null {
+  const metadata = detail.detail.task.metadata;
+  if (typeof metadata.startAt !== "string" || typeof metadata.endAt !== "string") return null;
+  return newCalendarEvent({
+    id: `harness-event-${detail.detail.task.id}`,
+    title: detail.detail.task.objective,
+    startAt: metadata.startAt,
+    endAt: metadata.endAt,
+    timeZone: typeof metadata.timeZone === "string" ? metadata.timeZone : "UTC",
+    rrule: typeof metadata.rrule === "string" ? metadata.rrule : "",
+    taskId: detail.detail.task.id,
+    notes: detail.detail.task.scope,
+  });
 }
 
 function proposalContent(detail: ReturnType<typeof currentStep>, item: PlanItem): string {
@@ -54,6 +70,7 @@ export function executePersonalAffairsRun(runId: string, options: PersonalAffair
   const schedule = currentStep(runId, root);
   if (schedule.step.kind !== "schedule") throw new Error("Personal Affairs 安排步骤状态不一致");
   const item = planItem(schedule);
+  const calendar = calendarDraft(schedule);
   const latest = getRun(runId, root);
   if (!latest) throw new Error("运行不存在");
   const approved = latest.task.approvals.some((approval) => approval.stepId === schedule.step.id && approval.decision === "approved");
@@ -69,8 +86,18 @@ export function executePersonalAffairsRun(runId: string, options: PersonalAffair
 
   let saved: PlanItem;
   try {
+    const calendarBook = readCalendar(root);
+    if (calendar) {
+      const rangeStart = new Date(Date.parse(calendar.startAt) - 24 * 60 * 60 * 1000).toISOString();
+      const rangeEnd = new Date(Date.parse(calendar.startAt) + 366 * 24 * 60 * 60 * 1000).toISOString();
+      if (findCalendarConflicts([...calendarBook.events.filter((event) => event.id !== calendar.id), calendar], rangeStart, rangeEnd).length > 0) throw new Error("个人事务日程与已有本地日程冲突，请调整时间后重试");
+    }
     const book = readPlanBook(root);
     savePlanItem(item, book.revision, root);
+    if (calendar) {
+      saveCalendarEvent(calendar, calendarBook.revision, root);
+      recordHarnessEvent({ taskId: latest.task.id, runId, stepId: schedule.step.id, type: "personal_affairs_calendar_saved", payload: { eventId: calendar.id, startAt: calendar.startAt, endAt: calendar.endAt, timeZone: calendar.timeZone } }, root);
+    }
     saved = item;
   } catch (error) {
     markStep({ stepId: schedule.step.id, status: "failed", failureReason: error instanceof Error ? error.message : String(error) }, root);
@@ -89,5 +116,5 @@ export function executePersonalAffairsRun(runId: string, options: PersonalAffair
     revision: notebooks.revision,
   }, root);
   evaluateTask({ taskId: latest.task.id, runId, criteria: latest.task.acceptanceCriteria.map((criterion) => ({ criterion, passed: true, note: "用户批准后已写入本地计划本，并创建复盘记录" })) }, root);
-  markStep({ stepId: review.step.id, status: "completed", output: { notebookRevision: updated.revision, planItemId: saved.id } }, root);
+  markStep({ stepId: review.step.id, status: "completed", output: { notebookRevision: updated.revision, planItemId: saved.id, calendarEventId: calendar?.id ?? null } }, root);
 }

@@ -44,6 +44,12 @@ Personal Affairs 已从 Profile 提升为本地事务闭环：`capture -> clarif
 
 当前只完成隔离 Fixture 验证，证明审批门、计划写入、随手记记录和恢复状态；重复日程、时区、提醒、Windows Task Scheduler、ICS/CalDAV/Google/Microsoft 同步仍未实现。
 
+## CalendarEvent 本地基础（2026-10-02）
+
+新增 `.bt/calendar.json` 本地日程存储和 `/api/bt/calendar` 入口。CalendarEvent 强制保存带时区的开始/结束时间，使用 revision/原子替换避免并发覆盖；当前 RRULE 支持 `DAILY`、`WEEKLY`、`MONTHLY`、`INTERVAL`、`COUNT`、`UNTIL`、有限 `BYDAY`/`BYMONTHDAY`，并通过 `Intl.DateTimeFormat` 按 IANA 时区展开，拒绝落入夏令时无效区间的本地时间。冲突检测在给定范围展开事件后比较区间重叠，Personal Affairs 在用户批准后可写入本地日程并记录 Harness 事件。
+
+当前没有宣称完整 RFC 5545 语义：复杂 BYSETPOS/BYWEEKNO、外部 ETag/同步游标、提醒调度、ICS/CalDAV/Google/Microsoft Connector 尚未接入。
+
 GUI 追加阶段见 [GUI-RESEARCH.md](GUI-RESEARCH.md)：采用社区 Pi Web Desktop 的 Electron 壳和聊天组件，通过同版官方 SDK 加载现有 BT Extension；原 V0.1 不做前端的限制已被用户明确升级需求替代。
 
 核验日期：2026-09-16。先阅读官方仓库/文档，再实现；安装后同时核对发布包文档、`.d.ts` 和实际行为。

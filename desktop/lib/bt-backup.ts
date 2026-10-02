@@ -3,7 +3,7 @@ import { join, resolve, sep } from "node:path";
 
 const VERSION = 1;
 const BACKUP_DIR = [".bt", "backups"];
-const INCLUDED_BT_FILES = ["harness.db", "planner.json", "notebooks.json", "projects.json", "preferences.json"];
+const INCLUDED_BT_FILES = ["harness.db", "planner.json", "calendar.json", "notebooks.json", "projects.json", "preferences.json"];
 
 function backupRoot(root: string): string { return join(root, ...BACKUP_DIR); }
 function safeBackupPath(root: string, id: string): string {

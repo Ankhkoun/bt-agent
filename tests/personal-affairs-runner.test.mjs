@@ -16,7 +16,7 @@ test('Personal Affairs proposes locally, waits for approval, then records plan a
       workflowId: 'personal-affairs',
       objective: '办理实习材料',
       scope: '周五前完成；需要整理证明材料',
-      metadata: { date: '2026-10-09', project: 'career', priority: 'P1' },
+      metadata: { date: '2026-10-09', project: 'career', priority: 'P1', startAt: '2026-10-09T09:00:00+08:00', endAt: '2026-10-09T10:00:00+08:00', timeZone: 'Asia/Shanghai' },
     }, root);
     const run = harness.startRun(task.id, root);
     affairs.executePersonalAffairsRun(run.id, { root });
@@ -40,6 +40,9 @@ test('Personal Affairs proposes locally, waits for approval, then records plan a
     assert.equal(plan.items[0].date, '2026-10-09');
     const notes = JSON.parse(await readFile(join(root, '.bt', 'notebooks.json'), 'utf8'));
     assert.match(notes.notes[0].text, /待复盘/);
+    const calendar = JSON.parse(await readFile(join(root, '.bt', 'calendar.json'), 'utf8'));
+    assert.equal(calendar.events[0].timeZone, 'Asia/Shanghai');
+    assert.equal(calendar.events[0].taskId, task.id);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
