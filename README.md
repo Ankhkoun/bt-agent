@@ -18,6 +18,15 @@ V0.1 包含 General、Tutor、Interviewer、Planner、BT 五种模式、Markdown
 5. 会话栏加号新建；右键会话可重命名、删除等；放大镜搜索历史内容。已有会话保留自己的模式。
 
 BT 设置还包含新对话默认模式、每轮载入 Memory 的开关和长度、交流偏好。没有模型凭据时可以浏览 Memory、切换模式和管理项目，无法得到真实模型回复。
+
+### Personal Harness 任务中心
+
+任务中心提供统一的 Task、Run、Step、Action、Approval、Evidence、Artifact 和 Evaluation 记录。当前有两个可执行闭环：
+
+- **项目研究**：按只读策略读取项目和 Git，保存工具证据，生成研究报告，经审批后完成 Tutor/Interviewer 式验证，并提出待审阅 Memory Candidate。
+- **Tutor 学习**：诊断与教学后等待用户复述，再用变式问题验证迁移理解；用户回答、助手反馈、学习记录和 AI 评估均可回看，应用重启后可以从等待回答的步骤继续。
+
+从侧栏打开「任务中心」创建任务。Research 和 Tutor 的运行状态、审批、证据、产物、失败原因和评估会保存在 `.bt/harness.db`；个人 Memory 只有在「候选与历史」中明确确认后才写入 Markdown。当前任务中心仍是本地单用户能力，Office 全格式解析、重复提醒和外部日历同步属于后续版本。
 每份 Memory 默认最多载入 8000 字符，每轮合计最多载入 64000 字符；两项上限都可在设置中调整。超出上限的内容会被截断并标记，避免长期记录无限扩大模型上下文。
 
 桌面版和命令行版默认共享 `.bt/agent/` 中的模型配置、认证和原生 Session，以及根目录 `memory/`。不要同时让两个入口修改同一会话或同一份 Memory。

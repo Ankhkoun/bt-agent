@@ -75,4 +75,9 @@ body::before { background-image: url('/bt-logo.svg'); }
 .bt-task-artifacts li { display:grid; gap:4px; padding:8px 10px; background:var(--bg-secondary); border-radius:6px; font-size:11px; }
 .bt-task-artifacts span { color:var(--text-muted); overflow-wrap:anywhere; }
 .bt-task-evaluation { color:var(--text-muted); font-size:11px; line-height:1.6; }
+.bt-tutor-response { display:grid; gap:10px; margin:16px 0 22px; padding:12px; border:1px solid var(--border); border-radius:7px; background:var(--bg-secondary); }
+.bt-tutor-response label { display:grid; gap:7px; font-size:11px; color:var(--text-muted); }
+.bt-tutor-response textarea { width:100%; border:1px solid var(--border); border-radius:6px; padding:9px 10px; background:var(--bg); color:var(--text); font:inherit; line-height:1.6; resize:vertical; }
+.bt-tutor-response blockquote { margin:0; padding:9px 11px; border-left:3px solid var(--accent); color:var(--text-muted); font-size:11px; line-height:1.7; white-space:pre-wrap; max-height:180px; overflow:auto; }
+.bt-task-failure { margin:12px 0; padding:9px 11px; border-left:3px solid var(--error,#d66); color:var(--text-muted); font-size:11px; line-height:1.6; white-space:pre-wrap; overflow-wrap:anywhere; }
 @media(max-width:720px) { .bt-task-layout { grid-template-columns:1fr; } .bt-task-list { border-right:0; border-bottom:1px solid var(--border); max-height:250px; } .bt-task-detail { min-height:300px; } }

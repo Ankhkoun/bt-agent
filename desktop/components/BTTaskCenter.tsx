@@ -14,7 +14,7 @@ type Task = {
   updatedAt: string;
 };
 type Run = { id: string; taskId: string; status: string; currentStepId: string | null; startedAt: string | null; completedAt: string | null; failureReason: string | null };
-type Step = { id: string; runId: string; title: string; kind: string; status: string; position: number; attempt: number; requiresApproval: boolean };
+type Step = { id: string; runId: string; title: string; kind: string; status: string; position: number; attempt: number; requiresApproval: boolean; output?: Record<string, unknown> };
 type Detail = Task & { runs: Run[]; steps: Step[]; actions: { id: string; kind: string; toolName: string | null; riskLevel: string; status: string; input: Record<string, unknown>; output: Record<string, unknown> }[]; evidence: { id: string; sourceType: string; filePath: string | null; locator: string | null; quote: string }[]; approvals: { id: string; riskLevel: string; scope: string; reason: string; decision: string }[]; artifacts: { id: string; kind: string; summary: string; path: string | null }[]; evaluations: { id: string; result: string; pending: string[] }[] };
 
 const workflows = [
@@ -41,6 +41,7 @@ export function BTTaskCenter() {
   const [workflowId, setWorkflowId] = useState("research");
   const [objective, setObjective] = useState("");
   const [scope, setScope] = useState("");
+  const [tutorAnswer, setTutorAnswer] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -93,7 +94,55 @@ export function BTTaskCenter() {
     finally { setBusy(false); }
   };
 
+  const retryFailedStep = async (runId: string, stepId: string) => {
+    setBusy(true); setMessage("");
+    try {
+      const retry = await fetch(`/api/bt/runs/${encodeURIComponent(runId)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "retry-step", stepId }) });
+      const retryData = await retry.json() as { error?: string };
+      if (!retry.ok) throw new Error(retryData.error ?? "重试失败");
+      const execute = await fetch(`/api/bt/tasks/${encodeURIComponent(selected?.id ?? "")}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "execute", runId }) });
+      const executeData = await execute.json() as { task?: Detail; error?: string };
+      if (!execute.ok || !executeData.task) throw new Error(executeData.error ?? "重试启动失败");
+      setSelected(executeData.task); await refresh();
+    } catch (error) { setMessage(error instanceof Error ? error.message : String(error)); }
+    finally { setBusy(false); }
+  };
+
+  const submitTutorAnswer = async (event: React.FormEvent, taskId: string, runId: string) => {
+    event.preventDefault();
+    if (!tutorAnswer.trim()) return;
+    setBusy(true); setMessage("");
+    try {
+      const response = await fetch(`/api/bt/tasks/${encodeURIComponent(taskId)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "respond", runId, text: tutorAnswer }) });
+      const data = await response.json() as { task?: Detail; error?: string };
+      if (!response.ok || !data.task) throw new Error(data.error ?? "回答提交失败");
+      setTutorAnswer(""); setSelected(data.task); await refresh();
+    } catch (error) { setMessage(error instanceof Error ? error.message : String(error)); }
+    finally { setBusy(false); }
+  };
+
   const activeRun = selected?.runs.find((run) => ["running", "paused", "waiting_approval"].includes(run.status)) ?? selected?.runs[0];
+  const currentStep = activeRun ? selected?.steps.find((step) => step.id === activeRun.currentStepId) : undefined;
+  const needsTutorAnswer = selected?.workflowId === "tutor" && activeRun?.status === "paused" && (currentStep?.kind === "recall" || currentStep?.kind === "variant");
+  const tutorPrompt = selected?.evidence.filter((item) => item.sourceType === "tutor-assistant").at(-1)?.quote;
+  const activeStatus = activeRun?.status;
+
+  useEffect(() => {
+    if (!selected?.id || !["running", "waiting_approval"].includes(activeStatus ?? "")) return;
+    const timer = window.setInterval(() => {
+      void Promise.all([
+        fetch(`/api/bt/tasks/${encodeURIComponent(selected.id)}`).then(async (response) => {
+          const data = await response.json() as { task?: Detail };
+          if (response.ok && data.task) setSelected(data.task);
+        }),
+        fetch("/api/bt/tasks").then(async (response) => {
+          const data = await response.json() as { tasks?: Task[]; counts?: Record<string, number> };
+          if (response.ok) { setTasks(data.tasks ?? []); setCounts(data.counts ?? {}); }
+        }),
+      ]).catch(() => undefined);
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [selected?.id, activeStatus]);
 
   return <div className="bt-task-center">
     <div className="bt-task-summary">
@@ -121,9 +170,16 @@ export function BTTaskCenter() {
         <div className="bt-task-actions">
           {!activeRun && !["completed", "cancelled"].includes(selected.status) && <button type="button" className="bt-primary" disabled={busy} onClick={() => void action(selected.id, "start")}><Play size={15}/>开始运行</button>}
           {activeRun?.status === "running" && <button type="button" disabled={busy} onClick={() => void action(selected.id, "pause", activeRun.id)}><Pause size={15}/>暂停</button>}
-          {activeRun?.status === "paused" && <button type="button" className="bt-primary" disabled={busy} onClick={() => void action(selected.id, "resume", activeRun.id)}><Play size={15}/>继续</button>}
+          {activeRun?.status === "paused" && !needsTutorAnswer && <button type="button" className="bt-primary" disabled={busy} onClick={() => void action(selected.id, "resume", activeRun.id)}><Play size={15}/>继续</button>}
+          {activeRun?.status === "failed" && currentStep?.status === "failed" && <button type="button" className="bt-primary" disabled={busy} onClick={() => void retryFailedStep(activeRun.id, currentStep.id)}><ArrowClockwise size={15}/>重试步骤</button>}
           {activeRun && ["running", "paused", "waiting_approval"].includes(activeRun.status) && <button type="button" disabled={busy} onClick={() => void action(selected.id, "cancel", activeRun.id)}><XCircle size={15}/>取消</button>}
         </div>
+        {activeRun?.failureReason && <p className="bt-task-failure">失败原因：{activeRun.failureReason}</p>}
+        {needsTutorAnswer && activeRun && <form className="bt-tutor-response" onSubmit={(event) => void submitTutorAnswer(event, selected.id, activeRun.id)}>
+          {tutorPrompt && <blockquote>{tutorPrompt}</blockquote>}
+          <label>你的回答<textarea required rows={5} maxLength={12000} value={tutorAnswer} onChange={(event) => setTutorAnswer(event.target.value)} placeholder={currentStep?.kind === "recall" ? "写出你对概念的理解" : "尝试把概念应用到变式场景"}/></label>
+          <button type="submit" className="bt-primary" disabled={busy || !tutorAnswer.trim()}>提交回答</button>
+        </form>}
         {activeRun && <><h4>运行步骤</h4><ol className="bt-task-steps">{selected.steps.filter((step) => step.runId === activeRun.id).map((step) => <li key={step.id} className={`step-${step.status}`}><span>{step.title}</span><em>{statusLabel[step.status] ?? step.status}{step.requiresApproval ? " · 需审批" : ""}</em></li>)}</ol></>}
         {selected.artifacts.length > 0 && <><h4>产物</h4><ul className="bt-task-artifacts">{selected.artifacts.map((artifact) => <li key={artifact.id}><strong>{artifact.kind}</strong><span>{artifact.summary}</span></li>)}</ul></>}
         {selected.approvals.some((approval) => approval.decision === "pending") && <><h4>待审批操作</h4><ul className="bt-task-artifacts">{selected.approvals.filter((approval) => approval.decision === "pending").map((approval) => <li key={approval.id}><strong>{approval.riskLevel}</strong><span>{approval.scope}：{approval.reason}</span><button type="button" className="bt-primary" disabled={busy} onClick={() => void resolveApproval(approval.id, "approved")}>批准</button><button type="button" disabled={busy} onClick={() => void resolveApproval(approval.id, "rejected")}>拒绝</button></li>)}</ul></>}

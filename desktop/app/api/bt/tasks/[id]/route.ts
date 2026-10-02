@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import { cancelRun, createArtifact, evaluateTask, getTask, pauseRun, resumeRun, startRun } from "@/lib/bt-harness";
 import { abortHarnessRun, executeHarnessRun } from "@/lib/bt-harness-runner";
+import { abortTutorRun, executeTutorRun, submitTutorInput } from "@/lib/bt-tutor-runner";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,13 +27,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       const run = startRun(id);
       const task = getTask(id);
       if (task?.workflowId === "research") void executeHarnessRun(run.id).catch((error) => console.error("[bt-harness] research run failed:", error));
+      if (task?.workflowId === "tutor") void executeTutorRun(run.id).catch((error) => console.error("[bt-harness] tutor run failed:", error));
       return NextResponse.json({ task, run }, { status: 201 });
     }
+    if (action === "respond") {
+      if (typeof body.runId !== "string" || !body.runId) return NextResponse.json({ error: "runId required" }, { status: 400 });
+      if (typeof body.text !== "string" || !body.text.trim() || body.text.length > 12000) return NextResponse.json({ error: "text must be 1–12000 characters" }, { status: 400 });
+      void submitTutorInput(id, body.runId, body.text).catch((error) => console.error("[bt-harness] tutor response failed:", error));
+      return NextResponse.json({ task: getTask(id) });
+    }
     if (typeof body.runId !== "string" || !body.runId) return NextResponse.json({ error: "runId required" }, { status: 400 });
-    if (action === "pause") { pauseRun(body.runId); await abortHarnessRun(body.runId); }
-    else if (action === "resume") { const run = resumeRun(body.runId); if (getTask(id)?.workflowId === "research") void executeHarnessRun(run.id).catch((error) => console.error("[bt-harness] research resume failed:", error)); }
-    else if (action === "execute") { void executeHarnessRun(body.runId).catch((error) => console.error("[bt-harness] research execute failed:", error)); }
-    else if (action === "cancel") { cancelRun(body.runId); await abortHarnessRun(body.runId); }
+    if (action === "pause") { pauseRun(body.runId); await abortHarnessRun(body.runId); await abortTutorRun(body.runId); }
+    else if (action === "resume") { const run = resumeRun(body.runId); if (getTask(id)?.workflowId === "research") void executeHarnessRun(run.id).catch((error) => console.error("[bt-harness] research resume failed:", error)); if (getTask(id)?.workflowId === "tutor") void executeTutorRun(run.id).catch((error) => console.error("[bt-harness] tutor resume failed:", error)); }
+    else if (action === "execute") { const task = getTask(id); if (task?.workflowId === "research") void executeHarnessRun(body.runId).catch((error) => console.error("[bt-harness] research execute failed:", error)); if (task?.workflowId === "tutor") void executeTutorRun(body.runId).catch((error) => console.error("[bt-harness] tutor execute failed:", error)); }
+    else if (action === "cancel") { cancelRun(body.runId); await abortHarnessRun(body.runId); await abortTutorRun(body.runId); }
     else if (action === "evaluate") evaluateTask({ taskId: id, runId: body.runId, criteria: Array.isArray(body.criteria) ? body.criteria as never : undefined, pending: Array.isArray(body.pending) ? body.pending.filter((item): item is string => typeof item === "string") : undefined, humanReview: typeof body.humanReview === "string" ? body.humanReview : undefined });
     else if (action === "artifact") {
       if (typeof body.kind !== "string" || typeof body.summary !== "string") return NextResponse.json({ error: "kind and summary required" }, { status: 400 });

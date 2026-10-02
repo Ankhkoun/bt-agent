@@ -4,9 +4,11 @@
 
 已完成 Harness Kernel 第一批实现和 Project Research 本地执行闭环：SQLite 持久化任务、运行、步骤、动作、审批、证据、产物与评估；Pi 工具事件可追踪，Research 报告和待审阅 Memory Candidate 可生成；桌面任务中心可操作运行与审批。新增本地 DocumentBlock/PDF 解析、Connector Registry/Local File Connector、备份恢复 API 与桌面入口。
 
-当前边界：Research 是唯一已自动执行的完整 Workflow；Tutor/Interviewer/Planner/Build/Document 等已有结构化 Profile，但除 Research 外仍需继续接入各自执行器。Office 解析、重复日程/提醒、Windows Task Scheduler、ICS/CalDAV/Google/Microsoft 同步和独立安装发布仍未完成。
+新增 Tutor Workflow 执行器：诊断与教学后暂停等待用户复述，再暂停等待变式回答；回答以用户 Evidence 保存，助手反馈和最终学习记录生成 Artifact，规则评估完成后提出带 L2 AI 评估标记的知识地图 Memory Candidate。Tutor Session 的 sessionId、sessionFile 和工作目录写入事件日志，应用重启后可通过任务中心继续提交回答；没有回答时不会把任务标记为完成。
 
-验证记录：根集成与 Memory 测试 19 项、桌面测试 17 项、浏览器测试 2 项通过；`desktop` TypeScript、ESLint、生产构建通过。真实模型质量、外部同步可靠性和生活规划效果未通过独立真人验收，不作生产指标声明。
+当前边界：Research 和 Tutor 已有自动执行器；Interviewer/Planner/Build/Document 等已有结构化 Profile，但仍需继续接入各自执行器。Tutor 的学习效果、模型质量和跨进程恢复已通过隔离 Fixture 验证，真实模型质量和真人学习效果仍未形成独立指标。Office 解析、重复日程/提醒、Windows Task Scheduler、ICS/CalDAV/Google/Microsoft 同步和独立安装发布仍未完成。
+
+验证记录：根集成与 Memory 测试 19 项、桌面测试 18 项、浏览器测试 2 项通过；`desktop` TypeScript、ESLint、生产构建通过。真实模型质量、外部同步可靠性和生活规划效果未通过独立真人验收，不作生产指标声明。
 
 更新：2026-09-30。
 
