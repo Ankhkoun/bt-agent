@@ -33,3 +33,21 @@ test('Planner Runner requires approval before writing the formal plan book', asy
     assert.equal(book.items[0].priority, 'P1');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('Personal Planning completes its review step after the approved schedule write', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'bt-personal-planning-'));
+  try {
+    const task = harness.createTask({ workflowId: 'personal-planning', objective: '安排本周学习计划', scope: '每天一小时', metadata: { date: '2026-10-06', priority: 'P1' } }, root);
+    const run = harness.startRun(task.id, root);
+    planner.executePlannerRun(run.id, { root });
+    let detail = harness.getTask(task.id, root);
+    assert.ok(detail);
+    assert.equal(detail.runs[0].status, 'waiting_approval');
+    harness.resolveApproval(detail.approvals.find((approval) => approval.decision === 'pending').id, 'approved', root);
+    planner.executePlannerRun(run.id, { root });
+    detail = harness.getTask(task.id, root);
+    assert.equal(detail.runs[0].status, 'completed');
+    assert.equal(detail.steps.find((step) => step.kind === 'review').status, 'completed');
+    assert.equal(detail.evaluations.at(-1).result, 'pass');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

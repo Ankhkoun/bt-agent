@@ -67,4 +67,10 @@ export function executePlannerRun(runId: string, options: PlannerRunnerOptions =
   if (!latest) throw new Error("运行不存在");
   evaluateTask({ taskId: latest.task.id, runId, criteria: latest.task.acceptanceCriteria.map((criterion) => ({ criterion, passed: true, note: "计划候选已批准并写入计划本" })) }, root);
   markStep({ stepId: schedule.step.id, status: "completed", output: { planItemId: item.id, title: item.title, date: item.date } }, root);
+  const completed = getRun(runId, root);
+  if (!completed || completed.run.currentStepId === null) return;
+  const after = currentStep(runId, root);
+  if (after.step.kind === "review") {
+    markStep({ stepId: after.step.id, status: "completed", output: { planItemId: item.id, review: "计划已写入本地计划本，等待周期复盘" } }, root);
+  }
 }
