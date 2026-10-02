@@ -141,6 +141,14 @@ function localToInstant(parts: ReturnType<typeof localParts>, timeZone: string):
   return Math.min(...valid);
 }
 
+export function zonedLocalToInstant(parts: { year: number; month: number; day: number; hour: number; minute: number; second?: number; millisecond?: number }, timeZone: string): number {
+  return localToInstant({ year: parts.year, month: parts.month, day: parts.day, hour: parts.hour, minute: parts.minute, second: parts.second ?? 0, millisecond: parts.millisecond ?? 0 }, timeZone);
+}
+
+export function zonedPartsAt(instant: number, timeZone: string) {
+  return localParts(instant, timeZone);
+}
+
 function addDays(parts: ReturnType<typeof localParts>, days: number): ReturnType<typeof localParts> {
   const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days, parts.hour, parts.minute, parts.second, parts.millisecond));
   return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate(), hour: parts.hour, minute: parts.minute, second: parts.second, millisecond: parts.millisecond };
