@@ -10,7 +10,7 @@ V0.1 GUI：按用户追加需求，增加基于 Pi Web Desktop 的 Windows 桌�
 | V0.3 | Tutor 学习闭环与 Git diff → Tutor 自动复盘 | Tutor 任务已支持诊断、复述、变式、评估和 Memory Candidate；Git diff 自动采集、Codex 监控仍未实现 |
 | V0.4 | 间隔复习 | 当前仅记录复习问题，无后台调度 |
 | V0.5 | 简历驱动模拟面试 | 当前可手动提供简历，无自动解析流水线 |
-| V0.6 | Calendar / Task integration | 本地多视图计划本已按用户追加需求实现；外部日历同步、提醒、重复日程、小时级安排、导入和对话结构化写入待后续 |
+| V0.6 | Calendar / Task integration | Planner 已支持候选、审批和本地计划本写入；外部日历同步、提醒、重复日程、小时级安排、导入和对话结构化写入待后续 |
 | V0.7 | 真正的长期 Memory retrieval | 根据实际记忆规模再选方案 |
 | V1.0 | 完整 Personal AI | 长期可维护、可迁移、尊重共同历史 |
 

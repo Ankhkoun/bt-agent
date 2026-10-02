@@ -8,9 +8,11 @@
 
 新增 Document Workflow 执行器：从任务范围读取本地 Markdown、文本或 PDF，保存行号/页码 Evidence，生成文档处理 Artifact 并运行规则 Evaluation；超过 2000 个文本块会明确标记截断，DOCX/XLSX/PPTX 解析器未接入时直接失败并保留原因。
 
-当前边界：Research、Tutor 和 Document 已有自动执行器；Interviewer/Planner/Build 等已有结构化 Profile，但仍需继续接入各自执行器。Tutor 的学习效果、模型质量和跨进程恢复已通过隔离 Fixture 验证，真实模型质量和真人学习效果仍未形成独立指标。Office 解析、重复日程/提醒、Windows Task Scheduler、ICS/CalDAV/Google/Microsoft 同步和独立安装发布仍未完成。
+新增 Planner Workflow 执行器：完成目标和约束步骤后生成计划候选 Artifact，使用单次 L1 Approval 等待用户采纳；批准后才写入现有 `.bt/planner.json`，并记录正式事项的日期、优先级、项目和 Evaluation。
 
-验证记录：根集成与 Memory 测试 19 项、桌面测试 20 项、浏览器测试 2 项通过；`desktop` TypeScript、ESLint、生产构建通过。真实模型质量、外部同步可靠性和生活规划效果未通过独立真人验收，不作生产指标声明。
+当前边界：Research、Tutor、Document 和 Planner 已有自动执行器；Interviewer/Build 等已有结构化 Profile，但仍需继续接入各自执行器。Tutor 的学习效果、模型质量和跨进程恢复已通过隔离 Fixture 验证，真实模型质量和真人学习效果仍未形成独立指标。重复日程/提醒、Windows Task Scheduler、ICS/CalDAV/Google/Microsoft 同步和独立安装发布仍未完成。
+
+验证记录：根集成与 Memory 测试 19 项、桌面测试 21 项、浏览器测试 2 项通过；`desktop` TypeScript、ESLint、生产构建通过。真实模型质量、外部同步可靠性和生活规划效果未通过独立真人验收，不作生产指标声明。
 
 更新：2026-09-30。
 

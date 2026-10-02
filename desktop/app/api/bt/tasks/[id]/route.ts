@@ -4,6 +4,7 @@ import { cancelRun, createArtifact, evaluateTask, getTask, pauseRun, resumeRun, 
 import { abortHarnessRun, executeHarnessRun } from "@/lib/bt-harness-runner";
 import { abortTutorRun, executeTutorRun, submitTutorInput } from "@/lib/bt-tutor-runner";
 import { executeDocumentRun } from "@/lib/bt-document-runner";
+import { executePlannerRun } from "@/lib/bt-planner-runner";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,6 +31,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       if (task?.workflowId === "research") void executeHarnessRun(run.id).catch((error) => console.error("[bt-harness] research run failed:", error));
       if (task?.workflowId === "tutor") void executeTutorRun(run.id).catch((error) => console.error("[bt-harness] tutor run failed:", error));
       if (task?.workflowId === "document") void executeDocumentRun(run.id).catch((error) => console.error("[bt-harness] document run failed:", error));
+      if (task?.workflowId === "planner" || task?.workflowId === "personal-planning") void Promise.resolve().then(() => executePlannerRun(run.id)).catch((error) => console.error("[bt-harness] planner run failed:", error));
       return NextResponse.json({ task, run }, { status: 201 });
     }
     if (action === "respond") {
@@ -39,14 +41,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json({ task: getTask(id) });
     }
     if (typeof body.runId !== "string" || !body.runId) return NextResponse.json({ error: "runId required" }, { status: 400 });
-    if (action === "pause") { pauseRun(body.runId); await abortHarnessRun(body.runId); await abortTutorRun(body.runId); }
-    else if (action === "resume") { const run = resumeRun(body.runId); if (getTask(id)?.workflowId === "research") void executeHarnessRun(run.id).catch((error) => console.error("[bt-harness] research resume failed:", error)); if (getTask(id)?.workflowId === "tutor") void executeTutorRun(run.id).catch((error) => console.error("[bt-harness] tutor resume failed:", error)); if (getTask(id)?.workflowId === "document") void executeDocumentRun(run.id).catch((error) => console.error("[bt-harness] document resume failed:", error)); }
-    else if (action === "execute") { const task = getTask(id); if (task?.workflowId === "research") void executeHarnessRun(body.runId).catch((error) => console.error("[bt-harness] research execute failed:", error)); if (task?.workflowId === "tutor") void executeTutorRun(body.runId).catch((error) => console.error("[bt-harness] tutor execute failed:", error)); if (task?.workflowId === "document") void executeDocumentRun(body.runId).catch((error) => console.error("[bt-harness] document execute failed:", error)); }
-    else if (action === "cancel") { cancelRun(body.runId); await abortHarnessRun(body.runId); await abortTutorRun(body.runId); }
-    else if (action === "evaluate") evaluateTask({ taskId: id, runId: body.runId, criteria: Array.isArray(body.criteria) ? body.criteria as never : undefined, pending: Array.isArray(body.pending) ? body.pending.filter((item): item is string => typeof item === "string") : undefined, humanReview: typeof body.humanReview === "string" ? body.humanReview : undefined });
+    const runId = body.runId;
+    if (action === "pause") { pauseRun(runId); await abortHarnessRun(runId); await abortTutorRun(runId); }
+    else if (action === "resume") { const run = resumeRun(runId); const task = getTask(id); if (task?.workflowId === "research") void executeHarnessRun(run.id).catch((error) => console.error("[bt-harness] research resume failed:", error)); if (task?.workflowId === "tutor") void executeTutorRun(run.id).catch((error) => console.error("[bt-harness] tutor resume failed:", error)); if (task?.workflowId === "document") void executeDocumentRun(run.id).catch((error) => console.error("[bt-harness] document resume failed:", error)); if (task?.workflowId === "planner" || task?.workflowId === "personal-planning") void Promise.resolve().then(() => executePlannerRun(run.id)).catch((error) => console.error("[bt-harness] planner resume failed:", error)); }
+    else if (action === "execute") { const task = getTask(id); if (task?.workflowId === "research") void executeHarnessRun(runId).catch((error) => console.error("[bt-harness] research execute failed:", error)); if (task?.workflowId === "tutor") void executeTutorRun(runId).catch((error) => console.error("[bt-harness] tutor execute failed:", error)); if (task?.workflowId === "document") void executeDocumentRun(runId).catch((error) => console.error("[bt-harness] document execute failed:", error)); if (task?.workflowId === "planner" || task?.workflowId === "personal-planning") void Promise.resolve().then(() => executePlannerRun(runId)).catch((error) => console.error("[bt-harness] planner execute failed:", error)); }
+    else if (action === "cancel") { cancelRun(runId); await abortHarnessRun(runId); await abortTutorRun(runId); }
+    else if (action === "evaluate") evaluateTask({ taskId: id, runId, criteria: Array.isArray(body.criteria) ? body.criteria as never : undefined, pending: Array.isArray(body.pending) ? body.pending.filter((item): item is string => typeof item === "string") : undefined, humanReview: typeof body.humanReview === "string" ? body.humanReview : undefined });
     else if (action === "artifact") {
       if (typeof body.kind !== "string" || typeof body.summary !== "string") return NextResponse.json({ error: "kind and summary required" }, { status: 400 });
-      createArtifact({ taskId: id, runId: body.runId, kind: body.kind, path: typeof body.path === "string" ? body.path : undefined, content: typeof body.content === "string" ? body.content : undefined, summary: body.summary });
+      createArtifact({ taskId: id, runId, kind: body.kind, path: typeof body.path === "string" ? body.path : undefined, content: typeof body.content === "string" ? body.content : undefined, summary: body.summary });
     } else return NextResponse.json({ error: "unknown task action" }, { status: 400 });
     return NextResponse.json({ task: getTask(id) });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 409 }); }
