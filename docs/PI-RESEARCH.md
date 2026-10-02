@@ -26,6 +26,12 @@ Planner 已从 Profile 提升为受审批的本地计划流程：`goal -> constr
 
 Interviewer 已从 Profile 提升为可恢复的面试流程：`scope -> ask -> follow_up -> evaluate`。两轮用户回答通过任务中心提交，助手反馈和回答以 Evidence 保存，最终生成面试报告和待人工复核的 Evaluation；当前不自动解析简历，也不宣称面试评价等同于真实能力。
 
+## Build Workflow 执行器（2026-10-02）
+
+Build 已从 Profile 提升为带审批的工程执行流程：`scope -> inspect -> edit -> verify -> artifact`。检查阶段使用只读 Pi Session 读取代码、测试和 Git Diff，并生成 `build-plan`；用户批准编辑阶段后才开放 `edit/write/powershell`，验证阶段再次单独审批，最终生成 `build-report` 和规则 Evaluation。每次工具调用、结果和助手反馈都保存为可回放 Evidence；L2 工具未取得当前步骤审批时会记录为 blocked 并请求审批，失败步骤可以通过 Harness 重试。
+
+当前只完成隔离 Fixture 验证，证明状态转换、审批门、L2 阻断、产物生成和失败重试逻辑；尚未用真实模型在真实项目上完成代码修改、Shell 验证、跨进程恢复和真人 Diff 审阅，因此不宣称 Build 已达到生产执行能力。
+
 GUI 追加阶段见 [GUI-RESEARCH.md](GUI-RESEARCH.md)：采用社区 Pi Web Desktop 的 Electron 壳和聊天组件，通过同版官方 SDK 加载现有 BT Extension；原 V0.1 不做前端的限制已被用户明确升级需求替代。
 
 核验日期：2026-09-16。先阅读官方仓库/文档，再实现；安装后同时核对发布包文档、`.d.ts` 和实际行为。
