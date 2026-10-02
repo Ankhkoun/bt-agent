@@ -16,7 +16,7 @@
 
 新增 Review Workflow 执行器：只读读取实现、文档、测试和 Git 变更，生成 Findings、Evidence、Risks 和 Next actions 结构化报告，保存 Review Artifact 并运行带人工复核标记的 Evaluation；误触发 L2 工具时会暂停并绑定当前步骤审批，批准后可从检查步骤继续。
 
-新增 Personal Affairs Workflow 执行器：收集事务、澄清约束、生成安排候选，用户批准后才写入本地 `.bt/planner.json`，按需写入带时区/RRULE 的 `.bt/calendar.json`，并创建随手记复盘记录；审批前不产生正式计划或日程。外部日历、通知和同步仍未接入。
+新增 Personal Affairs Workflow 执行器：收集事务、澄清约束、生成安排候选，用户批准后才写入本地 `.bt/planner.json`，按需写入带时区/RRULE 的 `.bt/calendar.json`，并创建随手记复盘记录；审批前不产生正式计划或日程。外部日历和跨系统同步仍未接入，应用运行时提醒由日历页/AppShell 提供。
 
 新增本地 CalendarEvent 基础：校验 IANA 时区和 ISO 时间，支持 DAILY/WEEKLY/MONTHLY 的有限 RRULE、夏令时无效时间拒绝、范围展开和冲突检测；日程通过独占 revision 写入并纳入备份。
 

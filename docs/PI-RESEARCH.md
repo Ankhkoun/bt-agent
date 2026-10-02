@@ -20,7 +20,7 @@ Document 已从 Profile 提升为本地执行流程：`scope -> ingest -> eviden
 
 ## Planner Workflow 执行器（2026-10-02）
 
-Planner 已从 Profile 提升为受审批的本地计划流程：`goal -> constraints -> propose -> schedule`；Personal Planning 在批准写入后还会完成 `review` 步骤。运行器先生成计划候选 Artifact，不直接写入计划本；用户批准 L1 Action 后才通过既有 revision/原子替换逻辑创建正式事项。当前候选使用任务的 `metadata.date/project/priority`，复杂 RRULE、提醒和外部日历同步仍未接入。
+Planner 已从 Profile 提升为受审批的本地计划流程：`goal -> constraints -> propose -> schedule`；Personal Planning 在批准写入后还会完成 `review` 步骤。运行器先生成计划候选 Artifact，不直接写入计划本；用户批准 L1 Action 后才通过既有 revision/原子替换逻辑创建正式事项。当前候选使用任务的 `metadata.date/project/priority`，复杂 RRULE、应用关闭后的系统级提醒和外部日历同步仍未接入。
 
 ## Interviewer Workflow 执行器（2026-10-02）
 
