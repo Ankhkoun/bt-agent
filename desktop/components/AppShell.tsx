@@ -22,6 +22,7 @@ import { ProjectTrustDialog } from "./ProjectTrustDialog";
 import { useTheme } from "@/hooks/useTheme";
 import { useAudio } from "@/hooks/useAudio";
 import { useNotifications } from "@/hooks/useNotifications";
+import { useCalendarReminders } from "@/hooks/useCalendarReminders";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
@@ -109,6 +110,7 @@ export function AppShell() {
   // sidebar plays through.
   const { soundEnabled, onSoundToggle, playDoneSound, unlockAudio, soundEnabledRef } = useAudio();
   const { notificationsEnabled, onNotificationsToggle, notifyDone } = useNotifications();
+  useCalendarReminders();
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);

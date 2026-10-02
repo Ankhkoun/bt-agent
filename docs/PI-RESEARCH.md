@@ -6,9 +6,57 @@ BT-Agent 在保留 Pi Session、Extension、Memory 和桌面聊天能力的基�
 
 第一条真实执行闭环是 Project Research：Research Task 创建后启动受限 Pi Session，监听 `tool_execution_start/end`、`message_end` 和 `agent_end`；只读工具动作记录为 Action，工具结果记录为带 SHA-256 的 Evidence，报告写入 `.bt/artifacts` 并登记 Artifact。报告完成后进入用户审批，批准后继续 Tutor / Interviewer 验证、规则评估和待审阅 Memory Candidate。L2 工具进入逐 Action 审批，L3 工具默认拒绝；这层策略不把 Pi Project Trust 当作沙箱。
 
-桌面任务中心已能查看步骤、Action、Evidence、Artifact、Evaluation 和审批入口；`/api/bt/documents` 提供本地 Markdown/文本/PDF 页级解析，DOCX/XLSX/PPTX 当前会明确返回解析器未接入；Connector SDK 已定义能力、版本、健康检查和同步接口，并提供受根目录约束的 Local File Connector。备份中心只备份 Harness/计划/随手记/项目设置和 Markdown Memory，恢复前自动生成安全快照，不处理 Pi 凭据或 Session。
+桌面任务中心已能查看步骤、Action、Evidence、Artifact、Evaluation 和审批入口；`/api/bt/documents` 提供本地 Markdown/文本/PDF 页级解析、DOCX 段落解析、XLSX 工作表单元格解析和 PPTX 幻灯片文本解析，未知格式会明确返回解析器未接入；Connector SDK 已定义能力、版本、健康检查和同步接口，并提供受根目录约束的 Local File Connector。备份中心只备份 Harness/计划/随手记/项目设置和 Markdown Memory，恢复前自动生成安全快照，不处理 Pi 凭据或 Session。
 
-已验证：Harness、Research Runner、状态机、审批过期、文档页级解析、Connector 根边界、备份恢复的隔离测试；根测试 19 项、桌面测试 17 项、浏览器测试 2 项、TypeScript、lint 和生产构建通过。尚未宣称 Office 全格式解析、日历重复规则/提醒、外部日历同步、联网 Connector、真实模型质量指标或独立安装发布完成。
+已验证：Harness、Research Runner、Tutor Runner、Document Runner、Planner Runner、Interviewer Runner、状态机、审批过期、Markdown/PDF/DOCX/XLSX/PPTX 文档解析、Connector 根边界、备份恢复、CalendarEvent、ICS Connector 和运行时提醒器的隔离测试；根测试 19 项、桌面测试 31 项、浏览器测试 2 项、TypeScript、lint 和生产构建通过。尚未宣称应用关闭后的系统级提醒、联网日历同步、真实模型质量指标或独立安装发布完成。
+
+## Tutor Workflow 执行器（2026-10-02）
+
+Tutor 已从 Profile 提升为可恢复的执行流程：`diagnose -> teach -> recall -> variant -> evaluate`。Pi Session 在诊断与教学后暂停，任务中心提交用户复述时恢复同一 Session；Tutor 对复述反馈后再次暂停等待变式回答，第二次回答完成后记录 Evaluation、生成学习记录 Artifact，并通过现有 Memory Review 机制提出知识地图候选。用户回答和助手反馈均按带 Session/步骤定位的 Evidence 保存；AI 评估固定标记为待用户审阅，不等同于真实掌握结果。Tutor 当前使用只读工具集，工具策略仍由统一 Policy Layer 记录和阻断。
+
+## Document Workflow 执行器（2026-10-02）
+
+Document 已从 Profile 提升为本地执行流程：`scope -> ingest -> evidence -> artifact`。运行器直接调用本地 `parseDocument`，为 Markdown/文本保存行号引用、为 DOCX 保存段落引用、为 XLSX 保存工作表单元格引用、为 PPTX 保存幻灯片引用、为 PDF 保存页级引用；产物是 `.bt/artifacts/document-<runId>.md`，Evaluation 会记录解析结果是否被分块截断。DOCX 使用本地 `mammoth` 提取段落文本，XLSX/PPTX 使用固定版本的 ZIP/XML 解析器，未知格式仍明确返回未接入错误。
+
+## Planner Workflow 执行器（2026-10-02）
+
+Planner 已从 Profile 提升为受审批的本地计划流程：`goal -> constraints -> propose -> schedule`；Personal Planning 在批准写入后还会完成 `review` 步骤。运行器先生成计划候选 Artifact，不直接写入计划本；用户批准 L1 Action 后才通过既有 revision/原子替换逻辑创建正式事项。当前候选使用任务的 `metadata.date/project/priority`，复杂 RRULE、应用关闭后的系统级提醒和外部日历同步仍未接入。
+
+## Interviewer Workflow 执行器（2026-10-02）
+
+Interviewer 已从 Profile 提升为可恢复的面试流程：`scope -> ask -> follow_up -> evaluate`。两轮用户回答通过任务中心提交，助手反馈和回答以 Evidence 保存，最终生成面试报告和待人工复核的 Evaluation；当前不自动解析简历，也不宣称面试评价等同于真实能力。
+
+## Build Workflow 执行器（2026-10-02）
+
+Build 已从 Profile 提升为带审批的工程执行流程：`scope -> inspect -> edit -> verify -> artifact`。检查阶段使用只读 Pi Session 读取代码、测试和 Git Diff，并生成 `build-plan`；用户批准编辑阶段后才开放 `edit/write/powershell`，验证阶段再次单独审批，最终生成 `build-report` 和规则 Evaluation。每次工具调用、结果和助手反馈都保存为可回放 Evidence；L2 工具未取得当前步骤审批时会记录为 blocked 并请求审批，失败步骤可以通过 Harness 重试。
+
+当前只完成隔离 Fixture 验证，证明状态转换、审批门、L2 阻断、产物生成和失败重试逻辑；尚未用真实模型在真实项目上完成代码修改、Shell 验证、跨进程恢复和真人 Diff 审阅，因此不宣称 Build 已达到生产执行能力。
+
+## Review Workflow 执行器（2026-10-02）
+
+Review 已从 Profile 提升为只读审查流程：`scope -> inspect -> findings -> artifact`。运行器使用 `read/grep/find/ls/git` 检查实现、文档、测试和变更，工具结果和助手报告都保存为 Evidence；最终生成 `review-report`，并以人工复核标记的 Evaluation 记录 Findings、风险和后续动作。若模型误调用 L2 工具，Harness 会记录 blocked Action、绑定当前检查步骤的审批，批准后从 `inspect` 继续。
+
+当前只完成隔离 Fixture 验证，证明只读工具证据、报告产物、规则评估和审批恢复逻辑；真实审查结论质量、跨进程恢复和真人审阅仍未验证。
+
+## Personal Affairs Workflow 执行器（2026-10-02）
+
+Personal Affairs 已从 Profile 提升为本地事务闭环：`capture -> clarify -> schedule -> review`。运行器先根据事务目标、范围和可选日期/项目/优先级生成 `affairs-proposal`，以 L1 审批等待用户采纳；批准后通过既有 revision/原子替换逻辑写入 `.bt/planner.json`，并在本地随手记创建带复盘问题的记录，最后保存规则 Evaluation。审批前不写正式计划，不调用外部日历、通知或发送能力。
+
+当前只完成隔离 Fixture 验证，证明审批门、计划写入、随手记记录和恢复状态；重复日程、时区、提醒、Windows Task Scheduler、ICS/CalDAV/Google/Microsoft 同步仍未实现。
+
+## CalendarEvent 本地基础（2026-10-02）
+
+新增 `.bt/calendar.json` 本地日程存储和 `/api/bt/calendar` 入口。CalendarEvent 强制保存带时区的开始/结束时间，使用 revision/原子替换避免并发覆盖；当前 RRULE 支持 `DAILY`、`WEEKLY`、`MONTHLY`、`INTERVAL`、`COUNT`、`UNTIL`、有限 `BYDAY`/`BYMONTHDAY`，并通过 `Intl.DateTimeFormat` 按 IANA 时区展开，拒绝落入夏令时无效区间的本地时间。冲突检测在给定范围展开事件后比较区间重叠，Personal Affairs 在用户批准后可写入本地日程并记录 Harness 事件。
+
+当前没有宣称完整 RFC 5545 语义：复杂 BYSETPOS/BYWEEKNO、应用关闭后的系统级提醒、CalDAV/Google/Microsoft Connector 尚未接入。新增日程界面支持本地周/月查看、编辑和删除；删除与更新沿用 calendar revision 冲突保护，冲突只提示用户，不自动覆盖或自动排程。
+
+日程支持最多 5 个 `reminderMinutes`，运行时提醒器按事件重复展开、计算提醒时间并用事件/发生次序/提前分钟数生成去重键。AppShell 轮询本地日程后复用 Electron 现有通知通道，通知失败不阻塞聊天；当前只覆盖应用运行期间，未宣称应用关闭后的系统级提醒。
+
+## 本地 ICS Connector（日程工作流追加，2026-10-02）
+
+`createIcsConnector` 实现本地 ICS 文件的 `healthCheck/read/create/update/delete/sync`，统一返回 CalendarEvent 列表和内容 SHA-256 版本。序列化保留 IANA `TZID`、UTC 时间、RRULE、`X-BT-TASK-ID` 和描述；读取支持带时区本地时间与 UTC 时间，写入使用既有私有文件原子替换。同步游标是当前规范化 ICS 内容的版本哈希，尚未实现远端 ETag、离线队列或冲突补偿。
+
+日程页通过 `/api/bt/calendar/ics` 提供显式本地导入/导出：导出读取 `.bt/calendar.json` 主数据写入 `.bt/calendar.ics`，导入要求当前 revision 匹配后才整体替换本地事件；没有静默合并或外部路径写入。
 
 GUI 追加阶段见 [GUI-RESEARCH.md](GUI-RESEARCH.md)：采用社区 Pi Web Desktop 的 Electron 壳和聊天组件，通过同版官方 SDK 加载现有 BT Extension；原 V0.1 不做前端的限制已被用户明确升级需求替代。
 

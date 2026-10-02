@@ -4,11 +4,31 @@
 
 已完成 Harness Kernel 第一批实现和 Project Research 本地执行闭环：SQLite 持久化任务、运行、步骤、动作、审批、证据、产物与评估；Pi 工具事件可追踪，Research 报告和待审阅 Memory Candidate 可生成；桌面任务中心可操作运行与审批。新增本地 DocumentBlock/PDF 解析、Connector Registry/Local File Connector、备份恢复 API 与桌面入口。
 
-当前边界：Research 是唯一已自动执行的完整 Workflow；Tutor/Interviewer/Planner/Build/Document 等已有结构化 Profile，但除 Research 外仍需继续接入各自执行器。Office 解析、重复日程/提醒、Windows Task Scheduler、ICS/CalDAV/Google/Microsoft 同步和独立安装发布仍未完成。
+新增 Tutor Workflow 执行器：诊断与教学后暂停等待用户复述，再暂停等待变式回答；回答以用户 Evidence 保存，助手反馈和最终学习记录生成 Artifact，规则评估完成后提出带 L2 AI 评估标记的知识地图 Memory Candidate。Tutor Session 的 sessionId、sessionFile 和工作目录写入事件日志，应用重启后可通过任务中心继续提交回答；没有回答时不会把任务标记为完成。
 
-验证记录：根集成与 Memory 测试 19 项、桌面测试 17 项、浏览器测试 2 项通过；`desktop` TypeScript、ESLint、生产构建通过。真实模型质量、外部同步可靠性和生活规划效果未通过独立真人验收，不作生产指标声明。
+新增 Document Workflow 执行器：从任务范围读取本地 Markdown、文本、DOCX、XLSX、PPTX 或 PDF，保存行号/段落/工作表单元格/幻灯片/页码 Evidence，生成文档处理 Artifact 并运行规则 Evaluation；超过 2000 个文本块会明确标记截断，未知格式会直接失败并保留原因。
 
-更新：2026-09-30。
+新增 Planner Workflow 执行器：完成目标和约束步骤后生成计划候选 Artifact，使用单次 L1 Approval 等待用户采纳；批准后才写入现有 `.bt/planner.json`，并记录正式事项的日期、优先级、项目和 Evaluation。
+
+新增 Interviewer Workflow 执行器：范围确认后提出核心问题，等待用户回答，再生成针对性追问；第二轮回答后生成面试报告 Artifact 和结构化 Evaluation。Session、回答和反馈均保留为可回放 Evidence，任务会在两轮回答完成前保持暂停。
+
+新增 Build Workflow 执行器：先以只读 Session 完成范围检查和实施计划，用户批准后才开放代码编辑，第二次审批后才运行验证命令，最后生成带 Evidence、Artifact 和 Evaluation 的交付报告；L2 工具未经当前步骤审批时会被阻断，任务可从失败步骤重试。
+
+新增 Review Workflow 执行器：只读读取实现、文档、测试和 Git 变更，生成 Findings、Evidence、Risks 和 Next actions 结构化报告，保存 Review Artifact 并运行带人工复核标记的 Evaluation；误触发 L2 工具时会暂停并绑定当前步骤审批，批准后可从检查步骤继续。
+
+新增 Personal Affairs Workflow 执行器：收集事务、澄清约束、生成安排候选，用户批准后才写入本地 `.bt/planner.json`，按需写入带时区/RRULE 的 `.bt/calendar.json`，并创建随手记复盘记录；审批前不产生正式计划或日程。外部日历和跨系统同步仍未接入，应用运行时提醒由日历页/AppShell 提供。
+
+新增本地 CalendarEvent 基础：校验 IANA 时区和 ISO 时间，支持 DAILY/WEEKLY/MONTHLY 的有限 RRULE、夏令时无效时间拒绝、范围展开和冲突检测；日程通过独占 revision 写入并纳入备份。
+
+新增日程工作流界面：计划本弹窗拆分「计划本 / 日程」页，日程页支持周/月展开、按事件时区显示重复事件、创建/编辑/删除、本地冲突提示和 revision 冲突反馈。新增本地 ICS Connector，支持健康检查、读取、创建、更新、删除和同步游标；日程页可显式把当前主数据导出到 `.bt/calendar.ics`，或在 revision 校验后从该文件导入覆盖。ICS 保留事件时区、RRULE、任务关联和备注。CalDAV/Google/Microsoft 等联网同步仍未接入。
+
+新增应用运行时提醒：CalendarEvent 可保存最多 5 个提前分钟数，纯函数按重复事件展开并以 `eventId:occurrenceIndex:minutes` 去重；桌面 AppShell 每 30 秒读取本地日程，在 Electron 环境通过既有通知弹窗发送提醒，浏览器环境不产生系统副作用。提醒历史仅保存在当前用户浏览器 localStorage，应用关闭后的 Windows Task Scheduler 仍未接入。
+
+当前边界：Research、Tutor、Document、Planner、Interviewer、Build、Review 和 Personal Affairs 已有自动执行器。Build 的状态流、审批门和失败重试，Review 的只读证据、报告和审批恢复，Personal Affairs 的审批后本地计划/日程/记录写入以及 CalendarEvent 的时区/RRULE/冲突规则已通过隔离 Fixture 验证；真实模型代码修改、Shell 验证、跨进程 Session 恢复、Review 结论质量、提醒、外部日历和真人 Diff 审阅仍未形成独立验收。当前 RRULE 仅支持有限字段，不覆盖复杂 BYSETPOS、BYWEEKNO 或完整日历标准语义。Tutor/Interviewer 的学习与面试效果、模型质量和跨进程恢复已通过隔离 Fixture 验证，真实模型质量和真人效果仍未形成独立指标。Windows Task Scheduler、CalDAV/Google/Microsoft 同步和独立安装发布仍未完成。
+
+验证记录：根集成与 Memory 测试 19 项、桌面测试 31 项（含 Calendar 两项、ICS Connector 一项、Reminder 一项、Build 两项、Review 一项、Personal Affairs 一项和 Personal Planning 回归一项）、浏览器测试 2 项通过；`desktop` TypeScript、ESLint、生产构建通过。真实模型质量、外部同步可靠性和生活规划效果未通过独立真人验收，不作生产指标声明。
+
+更新：2026-10-02。
 
 新增可审阅长期记忆与学习证据：`bt_memory_propose` 在当前 Session 分支匹配原文，候选确认前不写 Markdown；Memory 页面与 `/memory-review` 支持用户确认、拒绝、撤销。知识地图须提供知识点、建议等级、回答依据、缺口和下一验证问题，保留 AI评估/待验证标签。共享存储采用独占锁、revision/文件哈希校验、原子替换和事务恢复。根 19 项、桌面 9 项、浏览器 2 项与隔离 Edge 审阅 UI 测试通过，类型检查/lint/生产构建通过；无真实模型质量评测，个人 Memory 未修改。设计见 [MEMORY-REVIEW.md](MEMORY-REVIEW.md)，履历与贡献边界见 [RESUME-PROJECT.md](RESUME-PROJECT.md)。运行中的用户桌面未自动重启，需重新启动以加载新构建。
 

@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { BookOpenText, FolderSimplePlus, GearSix, X, ArrowSquareOut } from "@phosphor-icons/react";
 import { BTNotebooks } from "./BTNotebooks";
 import { BTPlanner } from "./BTPlanner";
+import { BTCalendar } from "./BTCalendar";
 import { MarkdownBody } from "./MarkdownBody";
 import { BTMemoryReview } from "./BTMemoryReview";
 import { BTTaskCenter } from "./BTTaskCenter";
@@ -16,6 +17,7 @@ type Data = { root: string; projects: Project[]; settings: Settings; memory: str
 export function BTLibrary({ onProject, onModels }: { onProject: (path: string) => void; onModels: () => void }) {
   const [data, setData] = useState<Data | null>(null);
   const [panel, setPanel] = useState<string | null>(null);
+  const [plannerPanel, setPlannerPanel] = useState<"plans" | "calendar">("plans");
   const [memory, setMemory] = useState("profile");
   const [text, setText] = useState("");
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -54,7 +56,7 @@ export function BTLibrary({ onProject, onModels }: { onProject: (path: string) =
     window.addEventListener("keydown", close, true);
     return () => { window.removeEventListener("keydown", close, true); previous?.focus(); };
   }, [panel]);
-  const open = (name: string) => { setMessage(""); setPanel(name); };
+  const open = (name: string) => { setMessage(""); if (name === "planner") setPlannerPanel("plans"); setPanel(name); };
   const save = async (payload: object) => {
     setBusy(true); setMessage("");
     try {
@@ -78,7 +80,7 @@ export function BTLibrary({ onProject, onModels }: { onProject: (path: string) =
       {panel === "tasks" && <BTTaskCenter />}
       {panel === "backups" && <BTBackupCenter />}
       {panel === "notebooks" && <BTNotebooks />}
-      {panel === "planner" && <BTPlanner />}
+      {panel === "planner" && <><nav className="bt-memory-tabs bt-planner-section-tabs"><button aria-pressed={plannerPanel === "plans"} onClick={() => setPlannerPanel("plans")}>计划本</button><button aria-pressed={plannerPanel === "calendar"} onClick={() => setPlannerPanel("calendar")}>日程</button></nav>{plannerPanel === "plans" ? <BTPlanner /> : <BTCalendar />}</>}
       {panel === "memory" && <><nav className="bt-memory-tabs">{Object.entries(labels).map(([id, label]) => <button key={id} aria-pressed={id === memory} onClick={() => setMemory(id)}>{label}</button>)}<button aria-pressed={memory === "review"} onClick={() => setMemory("review")}>候选与历史</button></nav>{memory === "review" ? <BTMemoryReview /> : <div className="bt-memory-content"><MarkdownBody>{text || message || "正在读取记忆…"}</MarkdownBody></div>}<footer>所有项目与模式共享 Memory。告诉 BT「记住…」或使用 /remember 提出候选，在「候选与历史」确认保存。</footer></>}
       {panel === "settings" && settings && <div className="bt-form">
         <button className="bt-primary" onClick={() => { setPanel(null); onModels(); }}>配置模型服务商 / API Key / 模型</button>
