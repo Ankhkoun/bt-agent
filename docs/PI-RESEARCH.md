@@ -38,6 +38,12 @@ Review 已从 Profile 提升为只读审查流程：`scope -> inspect -> finding
 
 当前只完成隔离 Fixture 验证，证明只读工具证据、报告产物、规则评估和审批恢复逻辑；真实审查结论质量、跨进程恢复和真人审阅仍未验证。
 
+## Personal Affairs Workflow 执行器（2026-10-02）
+
+Personal Affairs 已从 Profile 提升为本地事务闭环：`capture -> clarify -> schedule -> review`。运行器先根据事务目标、范围和可选日期/项目/优先级生成 `affairs-proposal`，以 L1 审批等待用户采纳；批准后通过既有 revision/原子替换逻辑写入 `.bt/planner.json`，并在本地随手记创建带复盘问题的记录，最后保存规则 Evaluation。审批前不写正式计划，不调用外部日历、通知或发送能力。
+
+当前只完成隔离 Fixture 验证，证明审批门、计划写入、随手记记录和恢复状态；重复日程、时区、提醒、Windows Task Scheduler、ICS/CalDAV/Google/Microsoft 同步仍未实现。
+
 GUI 追加阶段见 [GUI-RESEARCH.md](GUI-RESEARCH.md)：采用社区 Pi Web Desktop 的 Electron 壳和聊天组件，通过同版官方 SDK 加载现有 BT Extension；原 V0.1 不做前端的限制已被用户明确升级需求替代。
 
 核验日期：2026-09-16。先阅读官方仓库/文档，再实现；安装后同时核对发布包文档、`.d.ts` 和实际行为。

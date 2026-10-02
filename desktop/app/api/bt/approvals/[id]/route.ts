@@ -7,6 +7,7 @@ import { executePlannerRun } from "@/lib/bt-planner-runner";
 import { executeInterviewerRun } from "@/lib/bt-interviewer-runner";
 import { executeBuildRun } from "@/lib/bt-build-runner";
 import { executeReviewRun } from "@/lib/bt-review-runner";
+import { executePersonalAffairsRun } from "@/lib/bt-personal-affairs-runner";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +28,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       if (run?.task.workflowId === "interviewer") void executeInterviewerRun(approval.runId).catch((error) => console.error("[bt-harness] approved interviewer run failed:", error));
       if (run?.task.workflowId === "build") void executeBuildRun(approval.runId).catch((error) => console.error("[bt-harness] approved build run failed:", error));
       if (run?.task.workflowId === "review") void executeReviewRun(approval.runId).catch((error) => console.error("[bt-harness] approved review run failed:", error));
+      if (run?.task.workflowId === "personal-affairs") void Promise.resolve().then(() => executePersonalAffairsRun(approval.runId)).catch((error) => console.error("[bt-harness] approved personal affairs run failed:", error));
     }
     return NextResponse.json({ approval });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 409 }); }

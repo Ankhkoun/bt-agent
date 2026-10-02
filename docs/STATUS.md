@@ -16,9 +16,11 @@
 
 新增 Review Workflow 执行器：只读读取实现、文档、测试和 Git 变更，生成 Findings、Evidence、Risks 和 Next actions 结构化报告，保存 Review Artifact 并运行带人工复核标记的 Evaluation；误触发 L2 工具时会暂停并绑定当前步骤审批，批准后可从检查步骤继续。
 
-当前边界：Research、Tutor、Document、Planner、Interviewer、Build 和 Review 已有自动执行器。Build 的状态流、审批门和失败重试，Review 的只读证据、报告和审批恢复已通过隔离 Fixture 验证；真实模型代码修改、Shell 验证、跨进程 Session 恢复、Review 结论质量和真人 Diff 审阅仍未形成独立验收。Tutor/Interviewer 的学习与面试效果、模型质量和跨进程恢复已通过隔离 Fixture 验证，真实模型质量和真人效果仍未形成独立指标。重复日程/提醒、Windows Task Scheduler、ICS/CalDAV/Google/Microsoft 同步和独立安装发布仍未完成。
+新增 Personal Affairs Workflow 执行器：收集事务、澄清约束、生成安排候选，用户批准后才写入本地 `.bt/planner.json` 并创建随手记复盘记录；审批前不产生正式计划。外部日历、通知和重复规则仍未接入。
 
-验证记录：根集成与 Memory 测试 19 项、桌面测试 25 项（含 Build 两项和 Review 一项）、浏览器测试 2 项通过；`desktop` TypeScript、ESLint、生产构建通过。真实模型质量、外部同步可靠性和生活规划效果未通过独立真人验收，不作生产指标声明。
+当前边界：Research、Tutor、Document、Planner、Interviewer、Build、Review 和 Personal Affairs 已有自动执行器。Build 的状态流、审批门和失败重试，Review 的只读证据、报告和审批恢复，Personal Affairs 的审批后本地计划/记录写入已通过隔离 Fixture 验证；真实模型代码修改、Shell 验证、跨进程 Session 恢复、Review 结论质量、外部日历/通知和真人 Diff 审阅仍未形成独立验收。Tutor/Interviewer 的学习与面试效果、模型质量和跨进程恢复已通过隔离 Fixture 验证，真实模型质量和真人效果仍未形成独立指标。重复日程/提醒、Windows Task Scheduler、ICS/CalDAV/Google/Microsoft 同步和独立安装发布仍未完成。
+
+验证记录：根集成与 Memory 测试 19 项、桌面测试 26 项（含 Build 两项、Review 一项和 Personal Affairs 一项）、浏览器测试 2 项通过；`desktop` TypeScript、ESLint、生产构建通过。真实模型质量、外部同步可靠性和生活规划效果未通过独立真人验收，不作生产指标声明。
 
 更新：2026-09-30。
 
