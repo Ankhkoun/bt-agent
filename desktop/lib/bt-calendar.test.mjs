@@ -36,5 +36,9 @@ test('calendar validation and conflict detection preserve timezone and reject st
     assert.equal(book.revision, 2);
     assert.equal(book.events.length, 0);
     assert.throws(() => store.deleteCalendarEvent('event-1', 2, root), /日程不存在/);
+    book = store.replaceCalendarEvents([second], 2, root);
+    assert.equal(book.revision, 3);
+    assert.equal(book.events[0].title, '面试');
+    assert.throws(() => store.replaceCalendarEvents([], 2, root), /日程已在其他窗口更新/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

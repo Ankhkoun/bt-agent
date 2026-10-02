@@ -43,6 +43,17 @@ export function deleteCalendarEvent(id: unknown, revision: unknown, root = btRoo
   return book;
 }
 
+export function replaceCalendarEvents(values: unknown, revision: unknown, root = btRoot()): CalendarBook {
+  if (!Array.isArray(values)) throw new Error("日程列表格式无效");
+  const book = readCalendar(root);
+  if (revision !== book.revision) throw new CalendarConflict("日程已在其他窗口更新，请刷新后重试；当前输入仍保留。");
+  book.events = values.map(validateCalendarEvent);
+  book.revision += 1;
+  mkdirSync(join(root, ".bt"), { recursive: true });
+  writePrivateFileAtomicSync(path(root), JSON.stringify(book, null, 2));
+  return book;
+}
+
 export function newCalendarEvent(input: Partial<CalendarEvent>): CalendarEvent {
   const now = new Date().toISOString();
   return validateCalendarEvent({ id: randomUUID(), title: "", startAt: "", endAt: "", timeZone: "UTC", rrule: "", reminderMinutes: [], taskId: "", status: "scheduled", notes: "", providerLinks: {}, createdAt: now, updatedAt: now, ...input });

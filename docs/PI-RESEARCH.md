@@ -56,6 +56,8 @@ Personal Affairs 已从 Profile 提升为本地事务闭环：`capture -> clarif
 
 `createIcsConnector` 实现本地 ICS 文件的 `healthCheck/read/create/update/delete/sync`，统一返回 CalendarEvent 列表和内容 SHA-256 版本。序列化保留 IANA `TZID`、UTC 时间、RRULE、`X-BT-TASK-ID` 和描述；读取支持带时区本地时间与 UTC 时间，写入使用既有私有文件原子替换。同步游标是当前规范化 ICS 内容的版本哈希，尚未实现远端 ETag、离线队列或冲突补偿。
 
+日程页通过 `/api/bt/calendar/ics` 提供显式本地导入/导出：导出读取 `.bt/calendar.json` 主数据写入 `.bt/calendar.ics`，导入要求当前 revision 匹配后才整体替换本地事件；没有静默合并或外部路径写入。
+
 GUI 追加阶段见 [GUI-RESEARCH.md](GUI-RESEARCH.md)：采用社区 Pi Web Desktop 的 Electron 壳和聊天组件，通过同版官方 SDK 加载现有 BT Extension；原 V0.1 不做前端的限制已被用户明确升级需求替代。
 
 核验日期：2026-09-16。先阅读官方仓库/文档，再实现；安装后同时核对发布包文档、`.d.ts` 和实际行为。

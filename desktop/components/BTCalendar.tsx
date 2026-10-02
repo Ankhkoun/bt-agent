@@ -120,6 +120,18 @@ export function BTCalendar() {
     finally { setBusy(false); }
   }
 
+  async function syncIcs(direction: "import" | "export") {
+    if (direction === "import" && !window.confirm("将用本地 .bt/calendar.ics 覆盖当前日程，是否继续？")) return;
+    setBusy(true); setMessage("");
+    try {
+      const response = await fetch("/api/bt/calendar/ics", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ direction, revision: book.revision }) });
+      const data = await response.json() as { book?: CalendarBook; error?: string; imported?: number };
+      if (!response.ok || !data.book) throw new Error(data.error ?? "ICS 同步失败");
+      setBook(data.book); setDraft(null); setMessage(direction === "import" ? `已从本地 ICS 导入 ${data.imported ?? data.book.events.length} 个日程` : "已导出到本地 .bt/calendar.ics");
+    } catch (error) { setMessage(error instanceof Error ? error.message : String(error)); }
+    finally { setBusy(false); }
+  }
+
   const occurrenceDay = (item: (typeof occurrences)[number]) => {
     const parts = zonedPartsAt(Date.parse(item.startAt), item.event.timeZone);
     return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
@@ -131,6 +143,8 @@ export function BTCalendar() {
       <div className="bt-memory-tabs"><button aria-pressed={view === "week"} onClick={() => setView("week")}>周视图</button><button aria-pressed={view === "month"} onClick={() => setView("month")}>月视图</button></div>
       <label>定位日期<input aria-label="日程定位日期" type="date" value={anchor} onChange={(event) => { if (event.target.value) setAnchor(event.target.value); }} /></label>
       <button disabled={!loaded || busy} className="bt-primary" onClick={() => setDraft(newDraft(anchor))}>＋ 新增日程</button>
+      <button disabled={!loaded || busy} onClick={() => void syncIcs("export")}>导出 ICS</button>
+      <button disabled={!loaded || busy} onClick={() => void syncIcs("import")}>导入 ICS</button>
       <button disabled={busy} onClick={() => void refresh()}>刷新</button>
     </div>
     <p className="bt-plan-hint">日程保存到本机 `.bt/calendar.json`；时区和重复规则会原样保留，也可通过 ICS Connector 同步。</p>

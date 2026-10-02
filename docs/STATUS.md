@@ -20,7 +20,7 @@
 
 新增本地 CalendarEvent 基础：校验 IANA 时区和 ISO 时间，支持 DAILY/WEEKLY/MONTHLY 的有限 RRULE、夏令时无效时间拒绝、范围展开和冲突检测；日程通过独占 revision 写入并纳入备份。
 
-新增日程工作流界面：计划本弹窗拆分「计划本 / 日程」页，日程页支持周/月展开、按事件时区显示重复事件、创建/编辑/删除、本地冲突提示和 revision 冲突反馈。新增本地 ICS Connector，支持健康检查、读取、创建、更新、删除和同步游标；ICS 保留事件时区、RRULE、任务关联和备注。提醒调度、CalDAV/Google/Microsoft 等联网同步仍未接入。
+新增日程工作流界面：计划本弹窗拆分「计划本 / 日程」页，日程页支持周/月展开、按事件时区显示重复事件、创建/编辑/删除、本地冲突提示和 revision 冲突反馈。新增本地 ICS Connector，支持健康检查、读取、创建、更新、删除和同步游标；日程页可显式把当前主数据导出到 `.bt/calendar.ics`，或在 revision 校验后从该文件导入覆盖。ICS 保留事件时区、RRULE、任务关联和备注。CalDAV/Google/Microsoft 等联网同步仍未接入。
 
 新增应用运行时提醒：CalendarEvent 可保存最多 5 个提前分钟数，纯函数按重复事件展开并以 `eventId:occurrenceIndex:minutes` 去重；桌面 AppShell 每 30 秒读取本地日程，在 Electron 环境通过既有通知弹窗发送提醒，浏览器环境不产生系统副作用。提醒历史仅保存在当前用户浏览器 localStorage，应用关闭后的 Windows Task Scheduler 仍未接入。
 
