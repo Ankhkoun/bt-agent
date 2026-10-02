@@ -13,7 +13,7 @@ V0.1 包含 General、Tutor、Interviewer、Planner、BT 五种模式、Markdown
 
 1. 首次启动直接进入 BT-Agent 项目。点击左侧项目可切换；加号可添加已有代码目录或新的资料空间。
 2. 顶部 **General / Tutor / Interviewer / Planner / BT** 按钮切换当前会话模式。高亮显示当前模式，切换不消耗模型调用；也支持原有 `/mode` 和快捷命令。
-3. 左侧 **Memory** 查看七份共享 Markdown，包括知识地图、学习日志和共同记忆。更新仍通过明确的对话请求或 `/remember` 发起。
+3. 左侧 **Memory** 查看七份共享 Markdown，包括知识地图、学习日志和共同记忆。通过对话或 `/remember` 提出候选，在 **候选与历史** 查看原文来源、确认保存、拒绝或撤销。
 4. 点击 Memory 旁的齿轮，进入 **配置模型服务商 / API Key / 模型**，再点击左下角 **添加提供商**，选择服务商或自定义兼容接口，填写你自己的模型认证，启用并选择模型。窗口右上角设置也可进入模型配置。
 5. 会话栏加号新建；右键会话可重命名、删除等；放大镜搜索历史内容。已有会话保留自己的模式。
 
@@ -159,11 +159,12 @@ BT 通过 Pi 官方 Extension 覆盖 `read`，为 PDF 增加本地文本提取�
 你提供的十个初始共同主题已保存在本机 `memory/bt_memory.md`，包含选择的人生、结果与过程、忒修斯之船、AI 连续关系、BT 名字和“哪些知识真正属于自己”。
 不虚构你尚未提供的姓名、院校、论文题目或技术掌握程度。
 
-每轮加载七个文件，每个最多 8,000 字符；超限会明确标记，BT 可用 `read` 读取完整文件。没有向量检索、自动压缩或后台提炼。
-明确保存可用 `/remember 内容`；Tutor 学习单元结束、面试完整复盘、Planner 计划采纳后，也按规则进行有依据的局部编辑。
-普通闲聊不逐句记录。记录区分 **事实 / 用户观点 / AI解释 / 共同问题**，保留日期、来源与确认状态。
+每轮读取七份文件，默认每份最多 8,000 字符、合计最多 64,000 字符；超限明确标记，BT 可用 `read` 读取完整文件。没有向量检索、自动压缩或后台提炼。
+`/remember 内容`、学习单元复盘、完整面试复盘和已确认计划，可触发 `bt_memory_propose`。它只提出候选，程序核对证据是否出自当前对话分支并保存 Session、模式、条目 ID、原文；**候选不会进入长期 Memory 或下一轮自动加载**。
+打开 **Memory → 候选与历史**，检查正文与证据后确认保存或拒绝；已保存记录支持撤销。命令行也可使用 `/memory-review list`、`/memory-review accept ID`、`/memory-review reject ID`、`/memory-review undo ID`，这些命令不调用模型。记录区分 **事实 / 用户观点 / AI解释 / 共同问题**。
+知识地图候选须包含知识点、L0–L4 建议等级、实际回答依据、缺口和下一验证问题；L3/L4 至少需要两条不同用户原文。确认保存不代表 AI评估已被验证正确，程序无法仅凭引用数量判断真实掌握程度。
 
-V0.1 的保守写入是模型行为规则，由 Pi 原生 `read/edit/write` 执行，不是强制事务系统。重要记录请审阅和备份。
+审阅流程使用独占锁、revision 与文件 SHA-256 冲突检查、原子替换和事务意图恢复，确认时在既有 Markdown 后追加记录。撤销只移除原样的对应区块；文件已被修改则拒绝猜测覆盖。完整设计与限制见 [MEMORY-REVIEW.md](docs/MEMORY-REVIEW.md)。原生 write/edit 对记忆目录的直接修改被阻止，但 Shell 与用户手工编辑仍具有本机权限，这不是系统沙箱。
 个人 `memory/*.md` 默认被 Git 忽略；中性模板 `templates/memory/` 可以版本管理。安装只创建缺失文件，不覆盖已有记录。
 如果迁移机器，请单独安全复制 `memory/`；仅克隆 Git 会得到空白模板，不会恢复这份私人共同历史。
 
@@ -176,6 +177,7 @@ V0.1 的保守写入是模型行为规则，由 Pi 原生 `read/edit/write` 执�
 .bt/agent/settings.json   # 模型等个人设置
 .bt/agent/models.json     # 可选的自定义模型服务
 .bt/agent/sessions/       # Pi 原生树状 JSONL 会话
+.bt/memory-review/       # 候选、审阅状态、事务恢复（私人资料）
 ```
 
 这些文件均不进入 Git。`auth.json` 包含敏感凭据，不要分享。Memory 和 Session 虽在本地存储，模型调用时相关内容会发送给你选择的服务商。
@@ -260,6 +262,7 @@ npm run verify
 .\scripts\npm.ps1 test
 .\scripts\npm.ps1 run doctor
 .\scripts\npm.ps1 run verify
+.\scripts\npm.ps1 run test:memory-ui
 ```
 
 测试只用临时模板、测试会话和 `127.0.0.1` 模拟模型接口，不调用付费服务，不读取真实个人 Memory 或密钥。

@@ -12,6 +12,8 @@ const fixture = await mkdtemp(join(root, '.bt/tests/planner-ui-'));
 let child, browser;
 try {
   await cp(join(root, '.pi'), join(fixture, '.pi'), { recursive: true });
+  await mkdir(join(fixture, 'desktop/lib'), { recursive: true });
+  await cp(join(root, 'desktop/lib/bt-memory.ts'), join(fixture, 'desktop/lib/bt-memory.ts'));
   await cp(join(root, 'templates/memory'), join(fixture, 'memory'), { recursive: true });
   await mkdir(join(fixture, 'agent'));
   const probe = createServer(); probe.listen(0, '127.0.0.1'); await once(probe, 'listening');

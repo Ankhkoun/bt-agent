@@ -61,6 +61,7 @@
     "mammoth": "1.12.0",
     "mermaid": "11.16.1",
     "next": "16.3.1",
+    "pdfjs-dist": "6.3.289",
     "proper-lockfile": "4.1.2",
     "react": "19.2.4",
     "react-dom": "19.2.4",

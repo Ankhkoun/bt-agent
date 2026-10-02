@@ -50,6 +50,8 @@ test('BT desktop production API with isolated memory and local model', { timeout
     await rm(fixture, { recursive: true, force: true });
   });
   await cp(join(root, '.pi'), join(fixture, '.pi'), { recursive: true });
+  await mkdir(join(fixture, 'desktop/lib'), { recursive: true });
+  await cp(join(root, 'desktop/lib/bt-memory.ts'), join(fixture, 'desktop/lib/bt-memory.ts'));
   await cp(join(root, 'templates/memory'), join(fixture, 'memory'), { recursive: true });
   await writeFile(join(fixture, 'memory/profile.md'), '# Fixture\nBT_DESKTOP_MEMORY_MARKER\n');
   await mkdir(agentDir, { recursive: true });
@@ -141,6 +143,29 @@ test('BT desktop production API with isolated memory and local model', { timeout
     await api('/api/bt', { action: 'settings', settings: { ...btSettings, persona: 'BT_PERSONA_MARKER' } });
     sid = (await api('/api/agent/new', { cwd: fixture, type: 'ensure_session', provider: 'bt-test', modelId: 'fixture' })).sessionId;
   });
+  await t.test('memory review API confirms, rejects, undoes and detects stale or foreign requests', async () => {
+    const { proposeMemory } = await import('../desktop/lib/bt-memory.ts');
+    const original = await readFile(join(fixture, 'memory/profile.md'), 'utf8');
+    const source = { sessionId: 'fixture-source', cwd: fixture, mode: 'general', evidence: [{ entryId: 'fixture-user', role: 'user', quote: '我希望学习 Agent' }] };
+    const p = proposeMemory(fixture, { target: 'profile', kind: 'user_view', text: 'API_REVIEW_MARKER', reason: '学习方向' }, source);
+    let state = await api('/api/bt/memory-review');
+    assert.equal(state.proposals[0].status, 'pending');
+    assert.equal((await fetch(`${origin}/api/bt/memory-review`, { headers: { Origin: 'https://foreign.example' } })).status, 403);
+    const crossSite = await fetch(`${origin}/api/bt/memory-review`, { method: 'POST', headers: { Origin: 'https://foreign.example', 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'accept', id: p.id, revision: state.revision }) });
+    assert.equal(crossSite.status, 403);
+    const request = (revision, action = 'accept', id = p.id) => fetch(`${origin}/api/bt/memory-review`, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ action, id, revision }) });
+    assert.equal((await request(state.revision - 1)).status, 409);
+    state = await api('/api/bt/memory-review', { action: 'accept', id: p.id, revision: state.revision });
+    assert.match((await api('/api/bt?memory=profile')).content, /API_REVIEW_MARKER/);
+    assert.equal((await request(state.revision)).status, 409);
+    state = await api('/api/bt/memory-review', { action: 'undo', id: p.id, revision: state.revision });
+    assert.equal(await readFile(join(fixture, 'memory/profile.md'), 'utf8'), original);
+    const rejected = proposeMemory(fixture, { target: 'profile', kind: 'user_view', text: 'do not store', reason: 'fixture' }, source);
+    state = await api('/api/bt/memory-review');
+    await api('/api/bt/memory-review', { action: 'reject', id: rejected.id, revision: state.revision });
+    assert.equal(await readFile(join(fixture, 'memory/profile.md'), 'utf8'), original);
+  });
+
   await t.test('five real mode switches are awaited and do not call a model', async () => {
     for (const mode of ['general', 'tutor', 'interviewer', 'planner', 'bt']) {
       const count = requests.length;
