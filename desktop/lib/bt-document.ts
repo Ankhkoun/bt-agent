@@ -23,6 +23,13 @@ export function documentFormat(path: string): DocumentFormat {
   return EXTENSIONS[extname(path).toLowerCase()] ?? "unsupported";
 }
 
+function textBlocks(path: string, format: DocumentFormat, content: string, size: number, modifiedAt: string): DocumentBlock[] {
+  return content.split(/\r?\n/).map((text, index) => ({
+    id: `${format === "docx" ? "paragraph" : "line"}-${index + 1}`, path, format, locator: `${format === "docx" ? "P" : "L"}${index + 1}`, text,
+    contentHash: createHash("sha256").update(text).digest("hex"), metadata: { size, modifiedAt, parseStatus: "ok" as const },
+  }));
+}
+
 export async function parseDocument(path: string, signal?: AbortSignal): Promise<DocumentBlock[]> {
   signal?.throwIfAborted();
   const absolute = resolve(path);
@@ -32,12 +39,18 @@ export async function parseDocument(path: string, signal?: AbortSignal): Promise
   const format = documentFormat(absolute);
   if (format === "unsupported") return [{ id: "document-unsupported", path: absolute, format, locator: "file", text: "", contentHash: "", metadata: { size: info.size, modifiedAt: info.mtime.toISOString(), parseStatus: "unsupported", message: "当前版本未安装该格式的本地解析器" } }];
   if (format !== "pdf") {
-    if (["docx", "xlsx", "pptx"].includes(format)) return [{ id: "document-parser-pending", path: absolute, format, locator: "file", text: "", contentHash: "", metadata: { size: info.size, modifiedAt: info.mtime.toISOString(), parseStatus: "unsupported", message: `${format.toUpperCase()} 解析器将在 Office Connector 阶段接入` } }];
+    if (format === "docx") {
+      try {
+        const mammoth = await import("mammoth") as unknown as { extractRawText: (input: { path: string }) => Promise<{ value: string }> };
+        const result = await mammoth.extractRawText({ path: absolute });
+        return textBlocks(absolute, format, result.value, info.size, info.mtime.toISOString());
+      } catch (error) {
+        return [{ id: "document-parse-error", path: absolute, format, locator: "file", text: "", contentHash: "", metadata: { size: info.size, modifiedAt: info.mtime.toISOString(), parseStatus: "failed", message: error instanceof Error ? error.message : String(error) } }];
+      }
+    }
+    if (["xlsx", "pptx"].includes(format)) return [{ id: "document-parser-pending", path: absolute, format, locator: "file", text: "", contentHash: "", metadata: { size: info.size, modifiedAt: info.mtime.toISOString(), parseStatus: "unsupported", message: `${format.toUpperCase()} 解析器将在 Office Connector 阶段接入` } }];
     const content = await readFile(absolute, "utf8");
-    return content.split(/\r?\n/).map((text, index) => ({
-      id: `line-${index + 1}`, path: absolute, format, locator: `L${index + 1}`, text, contentHash: createHash("sha256").update(text).digest("hex"),
-      metadata: { size: info.size, modifiedAt: info.mtime.toISOString(), parseStatus: "ok" as const },
-    }));
+    return textBlocks(absolute, format, content, info.size, info.mtime.toISOString());
   }
   try {
     const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
